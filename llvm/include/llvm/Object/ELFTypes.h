@@ -44,6 +44,7 @@ template <class ELFT> struct Elf_Nhdr_Impl;
 template <class ELFT> class Elf_Note_Impl;
 template <class ELFT> class Elf_Note_Iterator_Impl;
 template <class ELFT> struct Elf_CGProfile_Impl;
+template <class ELFT> struct Elf_Pltgot_Impl;
 
 template <endianness E, bool Is64> struct ELFType {
 private:
@@ -75,6 +76,7 @@ public:
   using Note = Elf_Note_Impl<ELFType<E, Is64>>;
   using NoteIterator = Elf_Note_Iterator_Impl<ELFType<E, Is64>>;
   using CGProfile = Elf_CGProfile_Impl<ELFType<E, Is64>>;
+  using Pltgot = Elf_Pltgot_Impl<ELFType<E, Is64>>;
   using DynRange = ArrayRef<Dyn>;
   using ShdrRange = ArrayRef<Shdr>;
   using SymRange = ArrayRef<Sym>;
@@ -129,6 +131,7 @@ using ELF64BE = ELFType<support::big, true>;
   using Elf_Note = typename ELFT::Note;                                        \
   using Elf_Note_Iterator = typename ELFT::NoteIterator;                       \
   using Elf_CGProfile = typename ELFT::CGProfile;                              \
+  using Elf_Pltgot = typename ELFT::Pltgot;                                    \
   using Elf_Dyn_Range = typename ELFT::DynRange;                               \
   using Elf_Shdr_Range = typename ELFT::ShdrRange;                             \
   using Elf_Sym_Range = typename ELFT::SymRange;                               \
@@ -826,6 +829,23 @@ struct BBAddrMap {
     return Addr == Other.Addr && std::equal(BBEntries.begin(), BBEntries.end(),
                                             Other.BBEntries.begin());
   }
+};
+
+// PLTGOT tables.
+template <endianness TargetEndianness>
+struct Elf_Pltgot_Impl<ELFType<TargetEndianness, false>> {
+  LLVM_ELF_IMPORT_TYPES(TargetEndianness, false)
+  Elf_Addr pg_addr;
+  Elf_Addr pg_jmpreladdr;
+  Elf_Word pg_jmprelsize;
+};
+
+template <endianness TargetEndianness>
+struct Elf_Pltgot_Impl<ELFType<TargetEndianness, true>> {
+  LLVM_ELF_IMPORT_TYPES(TargetEndianness, true)
+  Elf_Addr pg_addr;
+  Elf_Addr pg_jmpreladdr;
+  Elf_Xword pg_jmprelsize;
 };
 
 } // end namespace object.

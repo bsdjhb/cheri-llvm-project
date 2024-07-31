@@ -1826,6 +1826,20 @@ enum {
   ELFCOMPRESS_HIPROC = 0x7fffffff  // End of processor-specific.
 };
 
+// PLTGOT table table entry for ELF32.
+struct Elf32_Pltgot {
+  Elf32_Addr pg_addr;
+  Elf32_Addr pg_jmpreladdr;
+  Elf32_Word pg_jmprelsize;
+};
+
+// PLTGOT table table entry for ELF64.
+struct Elf64_Pltgot {
+  Elf64_Addr pg_addr;
+  Elf64_Addr pg_jmpreladdr;
+  Elf64_Xword pg_jmprelsize;
+};
+
 /// Convert an architecture name into ELF's e_machine value.
 uint16_t convertArchNameToEMachine(StringRef Arch);
 
