@@ -273,8 +273,8 @@ public:
   // but had one or more functions with the no_split_stack attribute.
   bool someNoSplitStack = false;
 
-  // Name of the compartment containing this object file or empty string.
-  StringRef compartment;
+  // Compartment containing this object file or nullptr.
+  Compartment *compartment = nullptr;
 
   // Get cached DWARF information.
   DWARFCache *getDwarf();

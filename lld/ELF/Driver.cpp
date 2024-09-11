@@ -103,6 +103,7 @@ bool elf::link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
     tar = nullptr;
     in.reset();
 
+    compartments.clear();
     partitions.clear();
     partitions.emplace_back();
 
@@ -120,6 +121,7 @@ bool elf::link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   script = std::make_unique<LinkerScript>();
   symtab = std::make_unique<SymbolTable>();
 
+  compartments.clear();
   partitions.clear();
   partitions.emplace_back();
 
@@ -1091,6 +1093,14 @@ static bool isValidReportString(StringRef arg) {
   return arg == "none" || arg == "warning" || arg == "error";
 }
 
+static Compartment *findCompartment(StringRef name) {
+  for (Compartment &compart : compartments) {
+    if (compart.name.compare(name) == 0)
+      return &compart;
+  }
+  return nullptr;
+}
+
 // Initializes Config members by the command line options.
 static void readConfigs(opt::InputArgList &args) {
   errorHandler().verbose = args.hasArg(OPT_verbose);
@@ -1566,6 +1576,14 @@ static void readConfigs(opt::InputArgList &args) {
     } else {
       error(Twine("cannot find version script ") + arg->getValue());
     }
+
+  for (auto *arg : args.filtered(OPT_compartment)) {
+    if (findCompartment(arg->getValue()) != nullptr)
+      continue;
+    compartments.emplace_back();
+    Compartment &newCompart = compartments.back();
+    newCompart.name = arg->getValue();
+  }
 }
 
 // Some Config members do not directly correspond to any particular
@@ -1687,7 +1705,7 @@ void LinkerDriver::createFiles(opt::InputArgList &args) {
       config->asNeeded = true;
       break;
     case OPT_compartment:
-      config->compartment = arg->getValue();
+      config->compartment = findCompartment(arg->getValue());
       break;
     case OPT_format:
       config->formatBinary = isFormatBinary(arg->getValue());
