@@ -1094,6 +1094,8 @@ static bool isValidReportString(StringRef arg) {
 }
 
 static Compartment *findCompartment(StringRef name) {
+  if (name.empty())
+    return nullptr;
   for (Compartment &compart : compartments) {
     if (compart.name.compare(name) == 0)
       return &compart;
@@ -1578,7 +1580,8 @@ static void readConfigs(opt::InputArgList &args) {
     }
 
   for (auto *arg : args.filtered(OPT_compartment)) {
-    if (findCompartment(arg->getValue()) != nullptr)
+    if (arg->getValue()[0] == '\0' ||
+        findCompartment(arg->getValue()) != nullptr)
       continue;
     compartments.emplace_back();
     Compartment &newCompart = compartments.back();
