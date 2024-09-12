@@ -25,6 +25,7 @@ class InputFile;
 class Symbol;
 class DynamicReloc;
 
+struct Compartment;
 class Defined;
 struct Partition;
 class SyntheticSection;
@@ -67,6 +68,8 @@ public:
   // partition, so this will either be 0 or 1.
   uint8_t partition = 1;
   elf::Partition &getPartition() const;
+
+  Compartment *compartment = nullptr;
 
   // These corresponds to the fields in Elf_Shdr.
   uint32_t alignment;
