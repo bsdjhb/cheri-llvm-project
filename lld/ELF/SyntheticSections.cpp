@@ -1670,7 +1670,8 @@ int64_t DynamicReloc::computeAddend() const {
     return addend;
   case AddendOnlyWithTargetVA:
   case AgainstSymbolWithTargetVA:
-    return InputSection::getRelocTargetVA(inputSec->file, type, addend,
+    return InputSection::getRelocTargetVA(inputSec->compartment, inputSec->file,
+                                          type, addend,
                                           getOffset(), *sym, expr, inputSec,
                                           offsetInSec);
   case MipsMultiGotPage:

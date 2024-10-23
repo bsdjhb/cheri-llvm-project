@@ -636,12 +636,12 @@ static int64_t getTlsTpOffset(const Symbol &s) {
   }
 }
 
-uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
+uint64_t InputSectionBase::getRelocTargetVA(const Compartment *c,
+                                            const InputFile *file, RelType type,
                                             int64_t a, uint64_t p,
                                             const Symbol &sym, RelExpr expr,
                                             const InputSectionBase *isec,
                                             uint64_t offset) {
-  Compartment *c = file->compartment;
   switch (expr) {
   case R_ABS:
   case R_DTPREL:
@@ -726,7 +726,7 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
   }
   case R_RISCV_PC_INDIRECT: {
     if (const Relocation *hiRel = getRISCVPCRelHi20(&sym, a))
-      return getRelocTargetVA(file, hiRel->type, hiRel->addend, sym.getVA(),
+      return getRelocTargetVA(c, file, hiRel->type, hiRel->addend, sym.getVA(),
                               *hiRel->sym, hiRel->expr, isec, offset);
     return 0;
   }
@@ -1055,7 +1055,8 @@ void InputSectionBase::relocateAlloc(uint8_t *buf, uint8_t *bufEnd) {
       secAddr += sec->outSecOff;
     const uint64_t addrLoc = secAddr + offset;
     const uint64_t targetVA =
-        SignExtend64(getRelocTargetVA(file, rel.type, rel.addend, addrLoc,
+        SignExtend64(getRelocTargetVA(compartment, file, rel.type, rel.addend,
+                                      addrLoc,
                                       *rel.sym, rel.expr, this, offset),
                      bits);
     switch (rel.expr) {
