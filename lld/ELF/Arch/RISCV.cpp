@@ -40,6 +40,7 @@ public:
   RelType getDynRel(RelType type) const override;
   RelExpr getRelExpr(RelType type, const Symbol &s,
                      const uint8_t *loc) const override;
+  bool isCheriPCCDirectRel(RelType type) const override;
   void relocate(Compartment *c, uint8_t *loc, const Relocation &rel,
                 uint64_t val) const override;
   bool relaxOnce(int pass) const override;
@@ -374,6 +375,24 @@ RelExpr RISCV::getRelExpr(const RelType type, const Symbol &s,
     error(getErrorLocation(loc) + "unknown relocation (" + Twine(type) +
           ") against symbol " + toString(s));
     return R_NONE;
+  }
+}
+
+bool RISCV::isCheriPCCDirectRel(RelType type) const {
+  switch (type) {
+  case R_RISCV_JAL:
+  case R_RISCV_CHERI_CJAL:
+  case R_RISCV_BRANCH:
+  case R_RISCV_PCREL_HI20:
+  case R_RISCV_RVC_BRANCH:
+  case R_RISCV_RVC_JUMP:
+  case R_RISCV_CHERI_RVC_CJUMP:
+  case R_RISCV_32_PCREL:
+  case R_RISCV_PCREL_LO12_I:
+  case R_RISCV_PCREL_LO12_S:
+    return true;
+  default:
+    return false;
   }
 }
 
