@@ -854,7 +854,7 @@ uint64_t InputSectionBase::getRelocTargetVA(const Compartment *c,
     return cheriCapTable(c)->getVA() + capTableOffset - p;
   }
   case R_CHERI_CAPABILITY_TABLE_REL:
-    if (!cheriCapTable(c)) {
+    if (!ElfSym::cheriCapabilityTable || c != nullptr) {
       error("cannot compute difference between non-existent "
             "CheriCapabilityTable and symbol " + toString(sym));
       return sym.getVA(a);
