@@ -16,7 +16,7 @@
 # See https://github.com/CTSRD-CHERI/lld/issues/19
 
 # CHECK-LABEL: SYMBOL TABLE:
-# CHECK:      [[#%.16x,CAPTABLE:0x302b0]] l     O .captable		 0000000000000010 .L.str.123@CAPTABLE.0
+# CHECK:      [[#%.16x,CAPTABLE:0x30330]] l     O .captable		 0000000000000010 .L.str.123@CAPTABLE.0
 # CHECK-NEXT: [[#%.16x,CAPTABLE + 0x10]] l     O .captable		 0000000000000010 .L.duplicate_local@CAPTABLE.1
 # CHECK-NEXT: [[#%.16x,CAPTABLE + 0x20]] l     O .captable		 0000000000000010 duplicate_local_without_prefix@CAPTABLE.2
 # CHECK-NEXT: [[#%.16x,CAPTABLE + 0x30]] l     O .captable		 0000000000000010 duplicate_global@CAPTABLE
@@ -27,15 +27,15 @@
 # CHECK-NEXT: [[#%.16x,CAPTABLE + 0x80]] l     O .captable		 0000000000000010 local_with_same_name_as_global@CAPTABLE
 
 # CHECK-LABEL: CAPABILITY RELOCATION RECORDS:
-# CHECK-NEXT: Base: .L.str.123 (0x00000000000404b0)	Offset: 0x0000000000000000	Length: 0x0000000000000006	Permissions: 0x00000000
-# CHECK-NEXT: Base: .L.duplicate_local (0x00000000000404b6)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
-# CHECK-NEXT: Base: duplicate_local_without_prefix (0x00000000000404be)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
-# CHECK-NEXT:	Base: duplicate_global (0x00000000000404c6)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
-# CHECK-NEXT: Base: local_with_same_name_as_global (0x00000000000404ce)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
-# CHECK-NEXT: Base: .L.duplicate_local (0x00000000000404e0)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
-# CHECK-NEXT: Base: duplicate_local_without_prefix (0x00000000000404e8)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
-# CHECK-NEXT: Base: g (0x00000000000404f0)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
-# CHECK-NEXT: Base: local_with_same_name_as_global (0x00000000000404f8)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
+# CHECK-NEXT: Base: .L.str.123 (0x0000000000040570)	Offset: 0x0000000000000000	Length: 0x0000000000000006	Permissions: 0x00000000
+# CHECK-NEXT: Base: .L.duplicate_local (0x0000000000040576)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
+# CHECK-NEXT: Base: duplicate_local_without_prefix (0x000000000004057e)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
+# CHECK-NEXT:	Base: duplicate_global (0x0000000000040586)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
+# CHECK-NEXT: Base: local_with_same_name_as_global (0x000000000004058e)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
+# CHECK-NEXT: Base: .L.duplicate_local (0x00000000000405a0)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
+# CHECK-NEXT: Base: duplicate_local_without_prefix (0x00000000000405a8)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
+# CHECK-NEXT: Base: g (0x00000000000405b0)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
+# CHECK-NEXT: Base: local_with_same_name_as_global (0x00000000000405b8)	Offset: 0x0000000000000000	Length: 0x0000000000000008	Permissions: 0x00000000
 
 .macro add_captable_reference name
 .text
