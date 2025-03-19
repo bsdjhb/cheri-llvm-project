@@ -943,7 +943,7 @@ size_t CheriCapTableMappingSection::getSize() const {
 
 void CheriCapTableMappingSection::writeTo(uint8_t *buf) {
   assert(config->capTableScope != CapTableScopePolicy::All);
-  if (cheriCapTable(compartment))
+  if (!cheriCapTable(compartment))
     return;
   if (!in.symTab) {
     error("Cannot write " + this->name + " without .symtab section!");
