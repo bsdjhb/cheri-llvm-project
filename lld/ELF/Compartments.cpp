@@ -456,6 +456,23 @@ void assignSectionsToCompartments() {
 
     break;
   }
+
+  if (config->noDefaultCompartment) {
+    for (InputSectionBase *s : inputSections) {
+      if (s->file == nullptr || (s->flags & ELF::SHF_ALLOC) == 0)
+        continue;
+
+      if (!canCompartmentalize(s))
+        continue;
+
+      if (s->compartment == nullptr) {
+        error(isecName(s) + " not assigned to a compartment");
+        valid = false;
+      }
+    }
+    if (!valid)
+      exitLld(1);
+  }
 }
 
 }
