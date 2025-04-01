@@ -33,11 +33,11 @@ using namespace lld::elf;
 // section S2 that defines the target symbol.
 //
 // SectionDepends is a map of each S2 section that holds a logical
-// list of unique <S1, relocation type> tuples that target S2.  This
+// list of unique <S1, RelExpr> tuples that target S2.  This
 // list is actually stored as a map where each tuple is mapped to the
 // first Symbol targeted by such a tuple.  This permits using the
 // Symbol's name in diagnostic messages.
-typedef std::pair <InputSectionBase *, RelType> SectionKey;
+typedef std::pair<InputSectionBase *, RelExpr> SectionKey;
 typedef std::unordered_map<SectionKey, Symbol &> SectionDeps;
 typedef std::map<InputSectionBase *, SectionDeps> SectionDepends;
 
@@ -83,7 +83,7 @@ namespace std {
   template <> struct hash<SectionKey> {
     size_t operator()(SectionKey A) const {
       size_t h1 = std::hash<InputSectionBase *>{}(A.first);
-      size_t h2 = std::hash<RelType>{}(A.second);
+      size_t h2 = std::hash<RelExpr>{}(A.second);
       return h1 ^ (h2 << 1);
     }
   };
@@ -386,20 +386,30 @@ template <class ELFT, class RelTy>
 static void scanRelocations(InputSectionBase *sec, ArrayRef<RelTy> rels,
                             SectionDepends &depends) {
   for (const auto &rel : rels) {
-    InputSectionBase *target = relocationTargetSection<ELFT>(sec, rel);
+    InputSectionBase *tsec = relocationTargetSection<ELFT>(sec, rel);
 
-    if (target == nullptr)
+    if (tsec == nullptr)
       continue;
 
     // Ignore self-dependencies.
-    if (target == sec)
+    if (tsec == sec)
       continue;
 
-    SectionDeps &sdeps = depends[target];
-    SectionKey key(sec, rel.getType(config->isMips64EL));
+    uint64_t offset = rel.r_offset;
+    if (offset == uint64_t(-1))
+      continue;
+
+    RelType type = rel.getType(config->isMips64EL);
+    uint32_t symIndex = rel.getSymbol(config->isMips64EL);
+    Symbol &sym = sec->getFile<ELFT>()->getSymbol(symIndex);
+    const uint8_t *loc = sec->rawData.begin() + offset;
+    RelExpr expr = target->getRelExpr(type, sym, loc);
+    if (expr == R_NONE)
+      continue;
+
+    SectionDeps &sdeps = depends[tsec];
+    SectionKey key(sec, expr);
     if (sdeps.count(key) == 0) {
-      uint32_t symIndex = rel.getSymbol(config->isMips64EL);
-      Symbol &sym = sec->getFile<ELFT>()->getSymbol(symIndex);
       sdeps.emplace(key, sym);
     }
   }
@@ -538,9 +548,15 @@ void assignSectionsToCompartments() {
 
         CompartmentDeps cdeps;
         for (const auto &skv : sdeps) {
-          RelType type = skv.first.second;
-          if (!target->isCheriPCCDirectRel(type))
+          RelExpr expr = skv.first.second;
+          switch (expr) {
+          case R_PC:
+          case R_AARCH64_PAGE_PC:
+          case R_RISCV_PC_INDIRECT:
+            break;
+          default:
             continue;
+          }
 
           const InputSectionBase *s1 = skv.first.first;
           Compartment *c = s1->compartment;
