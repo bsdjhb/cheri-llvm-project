@@ -33,7 +33,6 @@ public:
                      const uint8_t *loc) const override;
   int64_t getImplicitAddend(const uint8_t *buf, RelType type) const override;
   RelType getDynRel(RelType type) const override;
-  bool isCheriPCCDirectRel(RelType type) const override;
   void writeGotPlt(Compartment *c, uint8_t *buf, const Symbol &s) const override;
   void writePltHeader(Compartment *c, uint8_t *buf) const override;
   void writePlt(Compartment *c, uint8_t *buf, const Symbol &sym,
@@ -256,29 +255,6 @@ RelExpr MIPS<ELFT>::getRelExpr(RelType type, const Symbol &s,
     error(getErrorLocation(loc) + "unknown relocation (" + Twine(type) +
           ") against symbol " + toString(s));
     return R_NONE;
-  }
-}
-
-template <class ELFT> bool MIPS<ELFT>::isCheriPCCDirectRel(RelType type) const {
-  switch (type) {
-  case R_MIPS_JALR:
-  case R_MIPS_PC32:
-  case R_MIPS_PC16:
-  case R_MIPS_PC19_S2:
-  case R_MIPS_PC21_S2:
-  case R_MIPS_PC26_S2:
-  case R_MIPS_PCHI16:
-  case R_MIPS_PCLO16:
-  case R_MICROMIPS_PC7_S1:
-  case R_MICROMIPS_PC10_S1:
-  case R_MICROMIPS_PC16_S1:
-  case R_MICROMIPS_PC18_S3:
-  case R_MICROMIPS_PC19_S2:
-  case R_MICROMIPS_PC23_S2:
-  case R_MICROMIPS_PC21_S1:
-    return true;
-  default:
-    return false;
   }
 }
 
