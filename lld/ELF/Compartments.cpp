@@ -747,7 +747,8 @@ void assignSectionsToCompartments() {
         continue;
 
       s->compartment = c;
-      message("\t" + isecName(s));
+      if (config->verboseCompartmentalization)
+        message("\t" + isecName(s));
     }
   }
 
