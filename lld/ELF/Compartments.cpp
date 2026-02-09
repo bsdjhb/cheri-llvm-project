@@ -424,6 +424,31 @@ static void scanRelocations(InputSectionBase *sec, SectionDepends &depends) {
     scanRelocations<ELFT>(sec, rels.relas, depends);
 }
 
+void duplicateSectionsForCompartments() {
+  if (compartments.size() == 1)
+    return;
+
+  SmallVector<InputSectionBase *, 0> newSections;
+  for (InputSectionBase *s : ctx.inputSections) {
+    if (!canCompartmentalize(s)) {
+      continue;
+    }
+
+    if (!MergeInputSection::classof(s) || firstExportedSymbol(s) != nullptr)
+      continue;
+
+    MergeInputSection *ms = cast<MergeInputSection>(s);
+    for (Compartment &c : compartments) {
+      if (c.isDefault())
+        continue;
+      newSections.push_back(ms->clone(c));
+    }
+  }
+
+  ctx.inputSections.insert(ctx.inputSections.end(), newSections.begin(),
+                           newSections.end());
+}
+
 void assignSectionsToCompartments() {
   if (compartments.size() == 1) {
     checkDefaultCompartment();

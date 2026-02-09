@@ -295,6 +295,9 @@ public:
                     StringRef name);
   MergeInputSection(uint64_t flags, uint32_t type, uint64_t entsize,
                     ArrayRef<uint8_t> data, StringRef name);
+  MergeInputSection(const Compartment &c, const MergeInputSection &other);
+
+  MergeInputSection *clone(const Compartment &c);
 
   static bool classof(const SectionBase *s) { return s->kind() == Merge; }
   void splitIntoPieces();
@@ -328,6 +331,9 @@ public:
   }
 
 private:
+  // Each compartment contains its own copy of each merge section.
+  SmallVector<MergeInputSection *, 0> clones;
+
   void splitStrings(StringRef s, size_t size);
   void splitNonStrings(ArrayRef<uint8_t> a, size_t size);
 };

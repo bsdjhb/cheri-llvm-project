@@ -19,6 +19,7 @@ struct Compartment;
 
 void readCompartmentPolicy(MemoryBufferRef mb);
 
+void duplicateSectionsForCompartments();
 void assignSectionsToCompartments();
 
 } // namespace elf

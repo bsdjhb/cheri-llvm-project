@@ -1406,6 +1406,23 @@ MergeInputSection::MergeInputSection(uint64_t flags, uint32_t type,
     : InputSectionBase(nullptr, flags, type, entsize, /*Link*/ 0, /*Info*/ 0,
                        /*Alignment*/ entsize, data, name, SectionBase::Merge) {}
 
+MergeInputSection::MergeInputSection(const Compartment &c,
+                                     const MergeInputSection &other)
+    : InputSectionBase(other) {
+  name = saver().save(other.name + c.suffix);
+  compartment = c.getNumber();
+}
+
+MergeInputSection *MergeInputSection::clone(const Compartment &c) {
+  MergeInputSection *copy = make<MergeInputSection>(c, *this);
+
+  if (clones.size() == 0)
+    clones.resize(compartments.size());
+  assert(clones[copy->compartment] == nullptr);
+  clones[copy->compartment] = copy;
+  return copy;
+}
+
 // This function is called after we obtain a complete list of input sections
 // that need to be linked. This is responsible to split section contents
 // into small chunks for further processing.
@@ -1419,6 +1436,10 @@ void MergeInputSection::splitIntoPieces() {
     splitStrings(toStringRef(contentMaybeDecompress()), entsize);
   else
     splitNonStrings(contentMaybeDecompress(), entsize);
+
+  for (MergeInputSection *ms : clones)
+    if (ms)
+      ms->splitIntoPieces();
 }
 
 SectionPiece &MergeInputSection::getSectionPiece(uint64_t offset) {

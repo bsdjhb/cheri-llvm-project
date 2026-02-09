@@ -3020,6 +3020,12 @@ void LinkerDriver::link(opt::InputArgList &args) {
   if (!config->relocatable)
     ctx.inputSections.push_back(createCommentSection());
 
+  // Duplicate SHF_MERGE sections for compartments.
+  duplicateSectionsForCompartments();
+
+  // Assign input sections to compartments.
+  assignSectionsToCompartments();
+
   // Split SHF_MERGE and .eh_frame sections into pieces in preparation for garbage collection.
   invokeELFT(splitSections,);
 
@@ -3030,9 +3036,6 @@ void LinkerDriver::link(opt::InputArgList &args) {
   // Make copies of any input sections that need to be copied into each
   // partition.
   copySectionsIntoPartitions();
-
-  // Assign input sections to compartments.
-  assignSectionsToCompartments();
 
   // Create synthesized sections such as .got and .plt. This is called before
   // processSectionCommands() so that they can be placed by SECTIONS commands.
