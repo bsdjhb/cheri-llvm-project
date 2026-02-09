@@ -379,9 +379,7 @@ static void checkDefaultCompartment() {
 template <class ELFT, class RelTy>
 static InputSectionBase *relocationTargetSection(InputSectionBase *sec,
                                                  const RelTy &rel) {
-  uint32_t symIndex = rel.getSymbol(config->isMips64EL);
-  Symbol &sym = sec->getFile<ELFT>()->getSymbol(symIndex);
-
+  Symbol &sym = sec->getFile<ELFT>()->getRelocTargetSym(rel);
   if (sym.isUndefined())
     return nullptr;
 
@@ -410,8 +408,7 @@ static void scanRelocations(InputSectionBase *sec, ArrayRef<RelTy> rels,
       continue;
 
     RelType type = rel.getType(config->isMips64EL);
-    uint32_t symIndex = rel.getSymbol(config->isMips64EL);
-    Symbol &sym = sec->getFile<ELFT>()->getSymbol(symIndex);
+    Symbol &sym = sec->getFile<ELFT>()->getRelocTargetSym(rel);
     const uint8_t *loc = sec->content().begin() + offset;
     RelExpr expr = target->getRelExpr(type, sym, loc);
     if (expr == R_NONE)
