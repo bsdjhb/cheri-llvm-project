@@ -377,25 +377,18 @@ static void checkDefaultCompartment() {
 }
 
 template <class ELFT, class RelTy>
-static InputSectionBase *relocationTargetSection(InputSectionBase *sec,
-                                                 const RelTy &rel) {
-  Symbol &sym = sec->getFile<ELFT>()->getRelocTargetSym(rel);
-  if (sym.isUndefined())
-    return nullptr;
-
-  Defined *d = dyn_cast<Defined>(&sym);
-  if (d == nullptr)
-    return nullptr;
-
-  return static_cast<InputSectionBase *>(d->section);
-}
-
-template <class ELFT, class RelTy>
 static void scanRelocations(InputSectionBase *sec, ArrayRef<RelTy> rels,
                             SectionDepends &depends) {
   for (const auto &rel : rels) {
-    InputSectionBase *tsec = relocationTargetSection<ELFT>(sec, rel);
+    Symbol &sym = sec->getFile<ELFT>()->getRelocTargetSym(rel);
+    if (sym.isUndefined())
+      continue;
 
+    Defined *d = dyn_cast<Defined>(&sym);
+    if (d == nullptr)
+      continue;
+
+    InputSectionBase *tsec = static_cast<InputSectionBase *>(d->section);
     if (tsec == nullptr)
       continue;
 
@@ -408,7 +401,6 @@ static void scanRelocations(InputSectionBase *sec, ArrayRef<RelTy> rels,
       continue;
 
     RelType type = rel.getType(config->isMips64EL);
-    Symbol &sym = sec->getFile<ELFT>()->getRelocTargetSym(rel);
     const uint8_t *loc = sec->content().begin() + offset;
     RelExpr expr = target->getRelExpr(type, sym, loc);
     if (expr == R_NONE)
