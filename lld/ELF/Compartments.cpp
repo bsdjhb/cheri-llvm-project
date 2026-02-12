@@ -207,6 +207,7 @@ static void addCompartment(StringRef name) {
   compartments.emplace_back();
   Compartment &newCompart = compartments.back();
   newCompart.name = name;
+  newCompart.suffix = "." + name.str();
 }
 
 static Compartment *findCompartment(StringRef name) {
@@ -427,12 +428,6 @@ void assignSectionsToCompartments() {
   if (compartments.size() == 1) {
     checkDefaultCompartment();
     return;
-  }
-
-  for (Compartment &c : compartments) {
-    if (c.isDefault())
-      continue;
-    c.suffix = "." + c.name.str();
   }
 
   bool valid = true;
