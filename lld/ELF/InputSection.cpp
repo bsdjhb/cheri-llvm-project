@@ -247,8 +247,8 @@ template <unsigned SymbolType>
 Defined *InputSectionBase::getEnclosingSymbol(uint64_t offset) const {
   for (Symbol *b : file->getSymbols())
     if (Defined *d = dyn_cast<Defined>(b))
-      if (d->section == this && d->type == SymbolType && d->value <= offset &&
-          offset < d->value + d->getSize())
+      if (d->getSection() == this && d->type == SymbolType &&
+          d->value <= offset && offset < d->value + d->getSize())
         return d;
   return nullptr;
 }
@@ -316,7 +316,8 @@ std::string InputSectionBase::getObjMsg(uint64_t off) const {
   // initialized.
   for (Symbol *b : file->getSymbols())
     if (auto *d = dyn_cast_or_null<Defined>(b))
-      if (d->section == this && d->value <= off && off < d->value + d->getSize())
+      if (d->getSection() == this && d->value <= off &&
+          off < d->value + d->getSize())
         return filename + ":(" + toString(*d) + ")" + archive;
 
   // If there's no symbol, print out the offset in the section.
@@ -420,7 +421,7 @@ void InputSection::copyRelocations(uint8_t *buf, ArrayRef<RelTy> rels) {
         p->setSymbolAndType(0, 0, false);
         continue;
       }
-      SectionBase *section = d->section;
+      SectionBase *section = d->getSection();
       if (!section->isLive()) {
         p->setSymbolAndType(0, 0, false);
         continue;
@@ -447,8 +448,9 @@ void InputSection::copyRelocations(uint8_t *buf, ArrayRef<RelTy> rels) {
         addend += sec->getFile<ELFT>()->mipsGp0;
       }
 
+      const Compartment &c = getCompartment();
       if (RelTy::IsRela)
-        p->r_addend = sym.getVA(addend) - section->getOutputSection()->addr;
+        p->r_addend = sym.getVA(c, addend) - section->getOutputSection()->addr;
       else if (config->relocatable && type != target.noneRel)
         sec->addReloc({R_ABS, type, rel.r_offset, addend, &sym});
     } else if (config->emachine == EM_PPC && type == R_PPC_PLTREL24 &&
@@ -550,7 +552,7 @@ static uint64_t getRISCVUndefinedRelativeWeakVA(uint64_t type, uint64_t p) {
 // RWPI variant so in practice we should expect the static base to be the base
 // of the RW segment.
 static uint64_t getARMStaticBase(const Symbol &sym) {
-  OutputSection *os = sym.getOutputSection();
+  OutputSection *os = sym.getOutputSection(*defaultCompart);
   if (!os || !os->ptLoad || !os->ptLoad->firstSec)
     fatal("SBREL relocation to " + sym.getName() + " without static base");
   return os->ptLoad->firstSec->addr;
@@ -564,12 +566,12 @@ static uint64_t getARMStaticBase(const Symbol &sym) {
 // R_RISCV_PCREL_LO12's symbol and addend.
 static Relocation *getRISCVPCRelHi20(const Symbol *sym, uint64_t addend) {
   const Defined *d = cast<Defined>(sym);
-  if (!d->section) {
+  if (!d->getSection()) {
     errorOrWarn("R_RISCV_PCREL_LO12 relocation points to an absolute symbol: " +
                 sym->getName());
     return nullptr;
   }
-  InputSection *isec = cast<InputSection>(d->section);
+  InputSection *isec = cast<InputSection>(d->getSection());
 
   if (addend != 0)
     warn("non-zero addend in R_RISCV_PCREL_LO12 relocation to " +
@@ -655,7 +657,7 @@ static int64_t getTlsTpOffset(const Symbol &s) {
   if (&s == ElfSym::tlsModuleBase)
     return 0;
 
-  return getTpOffset(s.getVA(0), Out::tlsPhdr);
+  return getTpOffset(s.getVA(*defaultCompart, 0), Out::tlsPhdr);
 }
 
 static int64_t getTgotTpOffset(const Compartment &c, const Symbol &s) {
@@ -674,13 +676,13 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
   case R_RELAX_TLS_LD_TO_LE_ABS:
   case R_RELAX_GOT_PC_NOPIC:
   case R_RISCV_ADD:
-    return sym.getVA(a);
+    return sym.getVA(c, a);
   case R_ADDEND:
     return a;
   case R_RELAX_HINT:
     return 0;
   case R_ARM_SBREL:
-    return sym.getVA(a) - getARMStaticBase(sym);
+    return sym.getVA(c, a) - getARMStaticBase(sym);
   case R_GOT:
   case R_RELAX_TLS_GD_TO_IE_ABS:
     return sym.getGotVA(c) + a;
@@ -699,9 +701,9 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
     return c.gotPlt->getVA() + a - p;
   case R_GOTREL:
   case R_PPC64_RELAX_TOC:
-    return sym.getVA(a) - c.got->getVA();
+    return sym.getVA(c, a) - c.got->getVA();
   case R_GOTPLTREL:
-    return sym.getVA(a) - c.gotPlt->getVA();
+    return sym.getVA(c, a) - c.gotPlt->getVA();
   case R_GOTPLT:
   case R_RELAX_TLS_GD_TO_IE_GOTPLT:
     return sym.getGotVA(c) + a - c.gotPlt->getVA();
@@ -722,7 +724,7 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
       return getLoongArchPageDelta(c.got->getGlobalDynAddr(sym) + a, p);
     return getLoongArchPageDelta(sym.getGotVA(c) + a, p);
   case R_MIPS_GOTREL:
-    return sym.getVA(a) - in.mipsGot->getGp(file);
+    return sym.getVA(c, a) - in.mipsGot->getGp(file);
   case R_MIPS_GOT_GP:
     return in.mipsGot->getGp(file) + a;
   case R_MIPS_GOT_GP_PC: {
@@ -760,17 +762,17 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
     return in.mipsGot->getVA() + in.mipsGot->getTlsIndexOffset(file) -
            in.mipsGot->getGp(file);
   case R_AARCH64_PAGE_PC: {
-    uint64_t val = sym.isUndefWeak() ? p + a : sym.getVA(a);
+    uint64_t val = sym.isUndefWeak() ? p + a : sym.getVA(c, a);
     return getAArch64Page(val) - getAArch64Page(p);
   }
   case R_RISCV_PC_INDIRECT: {
     if (const Relocation *hiRel = getRISCVPCRelHi20(&sym, a))
-      return getRelocTargetVA(file, hiRel->type, hiRel->addend, sym.getVA(),
+      return getRelocTargetVA(file, hiRel->type, hiRel->addend, sym.getVA(c),
                               *hiRel->sym, hiRel->expr, isec, offset);
     return 0;
   }
   case R_LOONGARCH_PAGE_PC:
-    return getLoongArchPageDelta(sym.getVA(a), p);
+    return getLoongArchPageDelta(sym.getVA(c, a), p);
   case R_PC:
   case R_ARM_PCA: {
     uint64_t dest;
@@ -793,9 +795,9 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
       else if (config->emachine == EM_RISCV)
         dest = getRISCVUndefinedRelativeWeakVA(type, p) + a;
       else
-        dest = sym.getVA(a);
+        dest = sym.getVA(c, a);
     } else {
-      dest = sym.getVA(a);
+      dest = sym.getVA(c, a);
     }
     return dest - p;
   }
@@ -814,7 +816,7 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
     // target VA computation.
     return sym.getPltVA(c) - p;
   case R_PPC64_CALL: {
-    uint64_t symVA = sym.getVA(a);
+    uint64_t symVA = sym.getVA(c, a);
     // If we have an undefined weak symbol, we might get here with a symbol
     // address of zero. That could overflow, but the code must be unreachable,
     // so don't bother doing anything at all.
@@ -833,7 +835,7 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
     return getPPC64TocBase() + a;
   case R_RELAX_GOT_PC:
   case R_PPC64_RELAX_GOT_PC:
-    return sym.getVA(a) - p;
+    return sym.getVA(c, a) - p;
   case R_RELAX_TLS_GD_TO_LE:
   case R_RELAX_TLS_IE_TO_LE:
   case R_RELAX_TLS_LD_TO_LE:
@@ -893,7 +895,7 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
   case R_ABS_CAP:
     llvm_unreachable("R_ABS_CAP should not be handled here!");
   case R_ABS_CAP_ADDR:
-    return sym.getVA(a);
+    return sym.getVA(c, a);
   case R_ABS_CAP_META:
     assert(sym.isUndefined() &&
            "cannot encode non-null derived capability yet");
@@ -908,9 +910,9 @@ uint64_t InputSectionBase::getRelocTargetVA(const InputFile *file, RelType type,
     if (!ElfSym::mipsCheriCapabilityTable) {
       error("cannot compute difference between non-existent "
             "CheriCapabilityTable and symbol " + toString(sym));
-      return sym.getVA(a);
+      return sym.getVA(c, a);
     }
-    return sym.getVA(a) - ElfSym::mipsCheriCapabilityTable->getVA();
+    return sym.getVA(c, a) - ElfSym::mipsCheriCapabilityTable->getVA(c);
   case R_MIPS_CHERI_CAPTAB_TLSGD:
     assert(a == 0 && "capability table index relocs should not have addends");
     return in.mipsCheriCapTable->getDynTlsOffset(sym);
@@ -991,6 +993,7 @@ void InputSection::relocateNonAlloc(uint8_t *buf, ArrayRef<RelTy> rels) {
     if (expr == R_NONE)
       continue;
 
+    const Compartment &c = getCompartment();
     if (tombstone ||
         (isDebug && (type == target.symbolicRel || expr == R_DTPREL))) {
       // Resolve relocations in .debug_* referencing (discarded symbols or ICF
@@ -1022,7 +1025,7 @@ void InputSection::relocateNonAlloc(uint8_t *buf, ArrayRef<RelTy> rels) {
       // TODO To reduce disruption, we use 0 instead of -1 as the tombstone
       // value. Enable -1 in a future release.
       auto *ds = dyn_cast<Defined>(&sym);
-      if (!sym.getOutputSection() || (ds && ds->folded && !isDebugLine)) {
+      if (!sym.getOutputSection(c) || (ds && ds->folded && !isDebugLine)) {
         // If -z dead-reloc-in-nonalloc= is specified, respect it.
         const uint64_t value = tombstone ? SignExtend64<bits>(*tombstone)
                                          : (isDebugLocOrRanges ? 1 : 0);
@@ -1045,7 +1048,7 @@ void InputSection::relocateNonAlloc(uint8_t *buf, ArrayRef<RelTy> rels) {
     // sections.
     if (expr == R_ABS || expr == R_DTPREL || expr == R_GOTPLTREL ||
         expr == R_RISCV_ADD) {
-      target.relocateNoSym(bufLoc, type, SignExtend64<bits>(sym.getVA(addend)));
+      target.relocateNoSym(bufLoc, type, SignExtend64<bits>(sym.getVA(c, addend)));
       continue;
     }
 
@@ -1067,7 +1070,7 @@ void InputSection::relocateNonAlloc(uint8_t *buf, ArrayRef<RelTy> rels) {
     warn(msg);
     target.relocateNoSym(
         bufLoc, type,
-        SignExtend64<bits>(sym.getVA(addend - offset - outSecOff)));
+        SignExtend64<bits>(sym.getVA(c, addend - offset - outSecOff)));
   }
 }
 
@@ -1077,13 +1080,14 @@ void InputSection::relocateNonAlloc(uint8_t *buf, ArrayRef<RelTy> rels) {
 // for allocatable sections, and this function does the same for
 // non-allocatable sections, such as sections with debug information.
 static void relocateNonAllocForRelocatable(InputSection *sec, uint8_t *buf) {
+  const Compartment &c = sec->getCompartment();
   const unsigned bits = config->is64 ? 64 : 32;
 
   for (const Relocation &rel : sec->relocs()) {
     // InputSection::copyRelocations() adds only R_ABS relocations.
     assert(rel.expr == R_ABS);
     uint8_t *bufLoc = buf + rel.offset;
-    uint64_t targetVA = SignExtend64(rel.sym->getVA(rel.addend), bits);
+    uint64_t targetVA = SignExtend64(rel.sym->getVA(c, rel.addend), bits);
     target->relocate(bufLoc, rel, targetVA);
   }
 }
@@ -1186,7 +1190,7 @@ void InputSectionBase::adjustSplitStackFunctionPrologues(uint8_t *buf,
     // library. It is not possible to tell how such symbols were compiled, so be
     // conservative.
     if (Defined *d = dyn_cast<Defined>(rel.sym))
-      if (InputSection *isec = cast_or_null<InputSection>(d->section))
+      if (InputSection *isec = cast_or_null<InputSection>(d->getSection(getCompartment())))
         if (!isec || !isec->getFile<ELFT>() || isec->getFile<ELFT>()->splitStack)
           continue;
 
@@ -1424,6 +1428,14 @@ MergeInputSection *MergeInputSection::clone(const Compartment &c) {
   assert(clones[copy->compartment] == nullptr);
   clones[copy->compartment] = copy;
   return copy;
+}
+
+MergeInputSection *MergeInputSection::getClone(const Compartment &c) {
+  if (c.isDefault())
+    return this;
+
+  assert(c.getNumber() < clones.size() && clones[c.getNumber()] != nullptr);
+  return clones[c.getNumber()];
 }
 
 // This function is called after we obtain a complete list of input sections

@@ -37,7 +37,8 @@ public:
   int64_t getImplicitAddend(const uint8_t *buf, RelType type) const override;
   void writeGotPlt(Compartment &c, uint8_t *buf,
                    const Symbol &s) const override;
-  void writeIgotPlt(uint8_t *buf, const Symbol &s) const override;
+  void writeIgotPlt(Compartment &c, uint8_t *buf,
+                    const Symbol &s) const override;
   void writePltHeader(Compartment &c, uint8_t *buf) const override;
   void writePlt(Compartment &c, uint8_t *buf, const Symbol &sym,
                 uint64_t pltEntryAddr) const override;
@@ -60,8 +61,9 @@ private:
 
 struct AArch64Relaxer {
   bool safeToRelaxAdrpLdr = false;
+  const Compartment &c;
 
-  AArch64Relaxer(ArrayRef<Relocation> relocs);
+  AArch64Relaxer(const Compartment &compart, ArrayRef<Relocation> relocs);
   bool tryRelaxAdrpAdd(const Relocation &adrpRel, const Relocation &addRel,
                        uint64_t secAddr, uint8_t *buf) const;
   bool tryRelaxAdrpLdr(const Relocation &adrpRel, const Relocation &ldrRel,
@@ -234,9 +236,10 @@ void AArch64::writeGotPlt(Compartment &c, uint8_t *buf, const Symbol &) const {
   write64(buf, c.plt->getVA());
 }
 
-void AArch64::writeIgotPlt(uint8_t *buf, const Symbol &s) const {
+void AArch64::writeIgotPlt(Compartment &c, uint8_t *buf,
+                           const Symbol &s) const {
   if (config->writeAddends)
-    write64(buf, s.getVA());
+    write64(buf, s.getVA(c));
 }
 
 void AArch64::writePltHeader(Compartment &c, uint8_t *buf) const {
@@ -292,7 +295,7 @@ bool AArch64::needsThunk(RelExpr expr, RelType type, const InputFile *file,
   if (type != R_AARCH64_CALL26 && type != R_AARCH64_JUMP26 &&
       type != R_AARCH64_PLT32)
     return false;
-  uint64_t dst = expr == R_PLT_PC ? s.getPltVA(c) : s.getVA(a);
+  uint64_t dst = expr == R_PLT_PC ? s.getPltVA(c) : s.getVA(c, a);
   return !inBranchRange(type, branchAddr, dst);
 }
 
@@ -601,7 +604,8 @@ void AArch64::relaxTlsIeToLe(uint8_t *loc, const Relocation &rel,
   llvm_unreachable("invalid relocation for TLS IE to LE relaxation");
 }
 
-AArch64Relaxer::AArch64Relaxer(ArrayRef<Relocation> relocs) {
+AArch64Relaxer::AArch64Relaxer(const Compartment &compart,
+                               ArrayRef<Relocation> relocs) : c(compart) {
   if (!config->relax)
     return;
   // Check if R_AARCH64_ADR_GOT_PAGE and R_AARCH64_LD64_GOT_LO12_NC
@@ -657,7 +661,7 @@ bool AArch64Relaxer::tryRelaxAdrpAdd(const Relocation &adrpRel,
 
   Symbol &sym = *adrpRel.sym;
   // Check if the address difference is within 1MiB range.
-  int64_t val = sym.getVA() - (secAddr + addRel.offset);
+  int64_t val = sym.getVA(c) - (secAddr + addRel.offset);
   if (val < -1024 * 1024 || val >= 1024 * 1024)
     return false;
 
@@ -719,11 +723,11 @@ bool AArch64Relaxer::tryRelaxAdrpLdr(const Relocation &adrpRel,
   // GOT references to absolute symbols can't be relaxed to use ADRP/ADD in
   // position-independent code because these instructions produce a relative
   // address.
-  if (config->isPic && !cast<Defined>(sym).section)
+  if (config->isPic && !cast<Defined>(sym).getSection(c))
     return false;
   // Check if the address difference is within 4GB range.
   int64_t val =
-      getAArch64Page(sym.getVA()) - getAArch64Page(secAddr + adrpRel.offset);
+      getAArch64Page(sym.getVA(c)) - getAArch64Page(secAddr + adrpRel.offset);
   if (val != llvm::SignExtend64(val, 33))
     return false;
 
@@ -738,10 +742,10 @@ bool AArch64Relaxer::tryRelaxAdrpLdr(const Relocation &adrpRel,
   write32le(buf + addRel.offset, 0x91000000 | adrpDestReg | (adrpDestReg << 5));
 
   target->relocate(buf + adrpSymRel.offset, adrpSymRel,
-                   SignExtend64(getAArch64Page(sym.getVA()) -
+                   SignExtend64(getAArch64Page(sym.getVA(c)) -
                                     getAArch64Page(secAddr + adrpSymRel.offset),
                                 64));
-  target->relocate(buf + addRel.offset, addRel, SignExtend64(sym.getVA(), 64));
+  target->relocate(buf + addRel.offset, addRel, SignExtend64(sym.getVA(c), 64));
   tryRelaxAdrpAdd(adrpSymRel, addRel, secAddr, buf);
   return true;
 }
@@ -750,7 +754,7 @@ void AArch64::relocateAlloc(InputSectionBase &sec, uint8_t *buf) const {
   uint64_t secAddr = sec.getOutputSection()->addr;
   if (auto *s = dyn_cast<InputSection>(&sec))
     secAddr += s->outSecOff;
-  AArch64Relaxer relaxer(sec.relocs());
+  AArch64Relaxer relaxer(sec.getCompartment(), sec.relocs());
   for (size_t i = 0, size = sec.relocs().size(); i != size; ++i) {
     const Relocation &rel = sec.relocs()[i];
     uint8_t *loc = buf + rel.offset;

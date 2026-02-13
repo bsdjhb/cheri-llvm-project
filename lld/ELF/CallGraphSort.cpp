@@ -249,7 +249,7 @@ DenseMap<const InputSectionBase *, int> CallGraphSort::run() {
         for (Symbol *sym : sections[i]->file->getSymbols())
           if (!sym->isSection()) // Filter out section-type symbols here.
             if (auto *d = dyn_cast<Defined>(sym))
-              if (sections[i] == d->section)
+              if (sections[i] == d->getSection())
                 os << sym->getName() << "\n";
         i = clusters[i].next;
         if (i == leader)

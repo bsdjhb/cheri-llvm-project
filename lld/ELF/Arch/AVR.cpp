@@ -111,7 +111,7 @@ bool AVR::needsThunk(RelExpr expr, RelType type, const InputFile *file,
   case R_AVR_HI8_LDI_GS:
     // A thunk is needed if the symbol's virtual address is out of range
     // [0, 0x1ffff].
-    return s.getVA() >= 0x20000;
+    return s.getVA(c) >= 0x20000;
   default:
     return false;
   }

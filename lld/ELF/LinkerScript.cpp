@@ -276,14 +276,14 @@ getSymbolAssignmentValues(ArrayRef<SectionCommand *> sectionCommands) {
   for (SectionCommand *cmd : sectionCommands) {
     if (auto *assign = dyn_cast<SymbolAssignment>(cmd)) {
       if (assign->sym) // sym is nullptr for dot.
-        ret.try_emplace(assign->sym, std::make_pair(assign->sym->section,
+        ret.try_emplace(assign->sym, std::make_pair(assign->sym->getSection(),
                                                     assign->sym->value));
       continue;
     }
     for (SectionCommand *subCmd : cast<OutputDesc>(cmd)->osec.commands)
       if (auto *assign = dyn_cast<SymbolAssignment>(subCmd))
         if (assign->sym)
-          ret.try_emplace(assign->sym, std::make_pair(assign->sym->section,
+          ret.try_emplace(assign->sym, std::make_pair(assign->sym->getSection(),
                                                       assign->sym->value));
   }
   return ret;
@@ -296,7 +296,7 @@ getChangedSymbolAssignment(const SymbolAssignmentMap &oldValues) {
   const Defined *changed = nullptr;
   for (auto &it : oldValues) {
     const Defined *sym = it.first;
-    if (std::make_pair(sym->section, sym->value) != it.second &&
+    if (std::make_pair(sym->getSection(), sym->value) != it.second &&
         (!changed || sym->getName() < changed->getName()))
       changed = sym;
   }
@@ -376,10 +376,10 @@ void LinkerScript::assignSymbol(SymbolAssignment *cmd, bool inSec) {
 
   ExprValue v = cmd->expression();
   if (v.isAbsolute()) {
-    cmd->sym->section = nullptr;
+    cmd->sym->setSection(nullptr);
     cmd->sym->value = v.getValue();
   } else {
-    cmd->sym->section = v.sec;
+    cmd->sym->setSection(v.sec);
     cmd->sym->value = v.getSectionOffset();
   }
   cmd->sym->type = v.type;
@@ -1411,7 +1411,7 @@ ExprValue LinkerScript::getSymbolValue(StringRef name, const Twine &loc) {
 
   if (Symbol *sym = symtab.find(name)) {
     if (auto *ds = dyn_cast<Defined>(sym)) {
-      ExprValue v{ds->section, false, ds->value, loc};
+      ExprValue v{ds->getSection(), false, ds->value, loc};
       // Retain the original st_type, so that the alias will get the same
       // behavior in relocation processing. Any operation will reset st_type to
       // STT_NOTYPE.

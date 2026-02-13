@@ -32,7 +32,8 @@ public:
   void writeGotPltHeader(uint8_t *buf) const override;
   void writeGotPlt(Compartment &c, uint8_t *buf,
                    const Symbol &s) const override;
-  void writeIgotPlt(uint8_t *buf, const Symbol &s) const override;
+  void writeIgotPlt(Compartment &c, uint8_t *buf,
+                    const Symbol &s) const override;
   void writePltHeader(Compartment &c, uint8_t *buf) const override;
   void writePlt(Compartment &c, uint8_t *buf, const Symbol &sym,
                 uint64_t pltEntryAddr) const override;
@@ -375,10 +376,10 @@ void X86_64::writeGotPlt(Compartment &c, uint8_t *buf, const Symbol &s) const {
   write64le(buf, s.getPltVA(c) + 6);
 }
 
-void X86_64::writeIgotPlt(uint8_t *buf, const Symbol &s) const {
+void X86_64::writeIgotPlt(Compartment &c, uint8_t *buf, const Symbol &s) const {
   // An x86 entry is the address of the ifunc resolver function (for -z rel).
   if (config->writeAddends)
-    write64le(buf, s.getVA());
+    write64le(buf, s.getVA(c));
 }
 
 void X86_64::writePltHeader(Compartment &c, uint8_t *buf) const {

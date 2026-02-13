@@ -298,6 +298,7 @@ public:
   MergeInputSection(const Compartment &c, const MergeInputSection &other);
 
   MergeInputSection *clone(const Compartment &c);
+  MergeInputSection *getClone(const Compartment &c);
 
   static bool classof(const SectionBase *s) { return s->kind() == Merge; }
   void splitIntoPieces();

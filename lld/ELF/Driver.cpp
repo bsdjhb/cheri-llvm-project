@@ -969,7 +969,7 @@ static void readCallGraph(MemoryBufferRef mb) {
     maybeWarnUnorderableSymbol(sym);
 
     if (Defined *dr = dyn_cast_or_null<Defined>(sym))
-      return dyn_cast_or_null<InputSectionBase>(dr->section);
+      return dyn_cast_or_null<InputSectionBase>(dr->getSection());
     return nullptr;
   };
 
@@ -1051,8 +1051,8 @@ template <class ELFT> static void readCallGraphsFromObjectFiles() {
       if (!fromSym || !toSym)
         continue;
 
-      auto *from = dyn_cast_or_null<InputSectionBase>(fromSym->section);
-      auto *to = dyn_cast_or_null<InputSectionBase>(toSym->section);
+      auto *from = dyn_cast_or_null<InputSectionBase>(fromSym->getSection());
+      auto *to = dyn_cast_or_null<InputSectionBase>(toSym->getSection());
       if (from && to)
         config->callGraphProfile[{from, to}] += cgpe.cgp_weight;
     }
@@ -2263,12 +2263,14 @@ static void demoteSharedAndLazySymbols() {
 // The section referred to by `s` is considered address-significant. Set the
 // keepUnique flag on the section if appropriate.
 static void markAddrsig(Symbol *s) {
-  if (auto *d = dyn_cast_or_null<Defined>(s))
-    if (d->section)
+  if (auto *d = dyn_cast_or_null<Defined>(s)) {
+    auto *sec = d->getSection();
+    if (sec)
       // We don't need to keep text sections unique under --icf=all even if they
       // are address-significant.
-      if (config->icf == ICFLevel::Safe || !(d->section->flags & SHF_EXECINSTR))
-        d->section->keepUnique = true;
+      if (config->icf == ICFLevel::Safe || !(sec->flags & SHF_EXECINSTR))
+        sec->keepUnique = true;
+  }
 }
 
 // Record sections that define symbols mentioned in --keep-unique <symbol>
@@ -2279,11 +2281,11 @@ static void findKeepUniqueSections(opt::InputArgList &args) {
   for (auto *arg : args.filtered(OPT_keep_unique)) {
     StringRef name = arg->getValue();
     auto *d = dyn_cast_or_null<Defined>(symtab.find(name));
-    if (!d || !d->section) {
+    if (!d || !d->getSection()) {
       warn("could not find symbol " + name + " to keep unique");
       continue;
     }
-    d->section->keepUnique = true;
+    d->getSection()->keepUnique = true;
   }
 
   // --icf=all --ignore-data-address-equality means that we can ignore
@@ -2532,7 +2534,8 @@ static void combineVersionedSymbol(Symbol &sym,
   } else if (auto *sym1 = dyn_cast<Defined>(&sym)) {
     if (sym2->versionId > VER_NDX_GLOBAL
             ? config->versionDefinitions[sym2->versionId].name == suffix1 + 1
-            : sym1->section == sym2->section && sym1->value == sym2->value) {
+            : sym1->getSection() == sym2->getSection() &&
+              sym1->value == sym2->value) {
       // Due to an assembler design flaw, if foo is defined, .symver foo,
       // foo@v1 defines both foo and foo@v1. Unless foo is bound to a
       // different version, GNU ld makes foo@v1 canonical and eliminates

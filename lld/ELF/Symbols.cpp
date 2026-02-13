@@ -98,19 +98,19 @@ std::string lld::verboseToString(const Symbol *b, uint64_t symOffset) {
 
   const elf::Defined* dr = dyn_cast<elf::Defined>(b);
   elf::InputSectionBase* isec = nullptr;
-  if (dr && dr->section) {
-    symOffset = dr->isSection() ? symOffset : dr->section->getOffset(dr->value);
-    isec = dyn_cast<elf::InputSectionBase>(dr->section);
+  if (dr && dr->getSection()) {
+    symOffset = dr->isSection() ? symOffset : dr->getSection()->getOffset(dr->value);
+    isec = dyn_cast<elf::InputSectionBase>(dr->getSection());
   }
   std::string name = toString(*b);
   if (name.empty()) {
-    if (dr && dr->section) {
+    if (dr && dr->getSection()) {
       if (isec) {
         name = isec->getLocation(symOffset);
       } else {
-        name = (dr->section->name + "+0x" + utohexstr(symOffset)).str();
+        name = (dr->getSection()->name + "+0x" + utohexstr(symOffset)).str();
       }
-    } else if (elf::OutputSection* os = b->getOutputSection()) {
+    } else if (elf::OutputSection* os = b->getOutputSection(*defaultCompart)) {
       name = (os->name + "+(unknown offset)").str();
     }
   }
@@ -147,11 +147,12 @@ SmallVector<SymbolAux, 0> elf::symAux;
 SymbolCompartAux elf::defaultSymbolCompartAux;
 std::mutex elf::compartMutex;
 
-static uint64_t getSymVA(const Symbol &sym, int64_t addend) {
+static uint64_t getSymVA(const Compartment &c, const Symbol &sym,
+                         int64_t addend) {
   switch (sym.kind()) {
   case Symbol::DefinedKind: {
     auto &d = cast<Defined>(sym);
-    SectionBase *isec = d.section;
+    SectionBase *isec = d.getSection(c);
 
     // This is an absolute symbol.
     if (!isec)
@@ -242,8 +243,8 @@ bool Symbol::isInAnyPlt() const {
   return false;
 }
 
-uint64_t Symbol::getVA(int64_t addend) const {
-  return getSymVA(*this, addend) + addend;
+uint64_t Symbol::getVA(const Compartment &c, int64_t addend) const {
+  return getSymVA(c, *this, addend) + addend;
 }
 
 uint64_t Symbol::getGotVA(const Compartment &c) const {
@@ -297,7 +298,7 @@ uint64_t Symbol::getTgotOffset(const Compartment &c) const {
 
 uint64_t Symbol::getMipsCheriCapTableVA(const InputSectionBase *isec,
                                         uint64_t offset) const {
-  return ElfSym::mipsCheriCapabilityTable->getVA() +
+  return ElfSym::mipsCheriCapabilityTable->getVA(isec->getCompartment()) +
          getMipsCheriCapTableOffset(isec, offset);
 }
 
@@ -317,6 +318,17 @@ uint64_t Defined::getSize() const {
   return size;
 }
 
+SectionBase *Defined::getSection(const Compartment &c) const {
+  if (section == nullptr)
+    return nullptr;
+
+  auto *ms = dyn_cast_or_null<MergeInputSection>(section);
+  if (ms)
+    return ms->getClone(c);
+
+  return section;
+}
+
 uint64_t Symbol::getSize() const {
   if (const auto *dr = dyn_cast<Defined>(this)) {
     return dr->getSize();
@@ -330,9 +342,9 @@ uint64_t Symbol::getSize() const {
   return cast<SharedSymbol>(this)->size;
 }
 
-OutputSection *Symbol::getOutputSection() const {
+OutputSection *Symbol::getOutputSection(const Compartment &c) const {
   if (auto *s = dyn_cast<Defined>(this)) {
-    if (auto *sec = s->section)
+    if (auto *sec = s->getSection(c))
       return sec->getOutputSection();
     return nullptr;
   }
@@ -341,7 +353,7 @@ OutputSection *Symbol::getOutputSection() const {
 
 Compartment *Symbol::containingCompartment() const {
   if (auto *s = dyn_cast<Defined>(this))
-    if (auto *sec = s->section)
+    if (auto *sec = s->getSection())
       return &sec->getCompartment();
   return nullptr;
 }
@@ -472,11 +484,11 @@ void elf::maybeWarnUnorderableSymbol(const Symbol *sym) {
     report(": unable to order undefined symbol: ");
   else if (sym->isShared())
     report(": unable to order shared symbol: ");
-  else if (d && !d->section)
+  else if (d && !d->getSection())
     report(": unable to order absolute symbol: ");
-  else if (d && isa<OutputSection>(d->section))
+  else if (d && isa<OutputSection>(d->getSection()))
     report(": unable to order synthetic symbol: ");
-  else if (d && !d->section->isLive())
+  else if (d && !d->getSection()->isLive())
     report(": unable to order discarded symbol: ");
 }
 
@@ -668,9 +680,9 @@ void elf::reportDuplicate(const Symbol &sym, const InputFile *newFile,
   if (!d || d->getName() == "__x86.get_pc_thunk.bx")
     return;
   // Allow absolute symbols with the same value for GNU ld compatibility.
-  if (!d->section && !errSec && errOffset && d->value == errOffset)
+  if (!d->getSection() && !errSec && errOffset && d->value == errOffset)
     return;
-  if (!d->section || !errSec) {
+  if (!d->getSection() || !errSec) {
     error("duplicate symbol: " + toString(sym) + "\n>>> defined in " +
           toString(sym.file) + "\n>>> defined in " + toString(newFile));
     return;
@@ -683,7 +695,7 @@ void elf::reportDuplicate(const Symbol &sym, const InputFile *newFile,
   //   >>>            bar.o (/home/alice/src/bar.o)
   //   >>> defined at baz.c:563
   //   >>>            baz.o in archive libbaz.a
-  auto *sec1 = cast<InputSectionBase>(d->section);
+  auto *sec1 = cast<InputSectionBase>(d->getSection());
   std::string src1 = sec1->getSrcMsg(sym, d->value);
   std::string obj1 = sec1->getObjMsg(d->value);
   std::string src2 = errSec->getSrcMsg(sym, errOffset);
@@ -702,7 +714,7 @@ void elf::reportDuplicate(const Symbol &sym, const InputFile *newFile,
 void Symbol::checkDuplicate(const Defined &other) const {
   if (isDefined() && !isWeak() && !other.isWeak())
     reportDuplicate(*this, other.file,
-                    dyn_cast_or_null<InputSectionBase>(other.section),
+                    dyn_cast_or_null<InputSectionBase>(other.getSection()),
                     other.value);
 }
 

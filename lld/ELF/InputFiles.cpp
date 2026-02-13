@@ -1213,7 +1213,7 @@ template <class ELFT> void ObjFile<ELFT>::postParse() {
     }
 
     if (sym.file == this) {
-      cast<Defined>(sym).section = sec;
+      cast<Defined>(sym).setSection(sec);
       continue;
     }
 

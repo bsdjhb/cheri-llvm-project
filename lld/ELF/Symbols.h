@@ -311,7 +311,7 @@ public:
   bool isInAnyGot() const;
   bool isInAnyPlt() const;
 
-  uint64_t getVA(int64_t addend = 0) const;
+  uint64_t getVA(const Compartment &c, int64_t addend = 0) const;
 
   uint64_t getGotOffset(const Compartment &c) const;
   uint64_t getGotVA(const Compartment &c) const;
@@ -325,7 +325,7 @@ public:
   uint64_t getMipsCheriCapTableOffset(const InputSectionBase *isec,
                                       uint64_t offset) const;
   uint64_t getSize() const;
-  OutputSection *getOutputSection() const;
+  OutputSection *getOutputSection(const Compartment &c) const;
 
   // The following two functions are used for symbol resolution.
   //
@@ -467,10 +467,18 @@ public:
     size -= diff;
   }
 
+  SectionBase *getSection() const {
+    return section;
+  }
+
+  SectionBase *getSection(const Compartment &) const;
+  void setSection(SectionBase *newSection) {
+    section = newSection;
+  }
+
   uint64_t value;
 private:
   uint64_t size; // Avoid accessing this directly due to CHERI st_size hack.
-public:
   SectionBase *section;
 };
 

@@ -214,7 +214,7 @@ static bool branchDestInFirstRegion(const InputSection *isec, uint64_t off,
   if (r) {
     uint64_t dst = (r->expr == R_PLT_PC)
                        ? r->sym->getPltVA(isec->getCompartment())
-                       : r->sym->getVA();
+                       : r->sym->getVA(isec->getCompartment());
     // Account for Thumb PC bias, usually cancelled to 0 by addend of -4.
     destAddr = dst + r->addend + 4;
   } else {
@@ -337,7 +337,7 @@ void ARMErr657417Patcher::init() {
       if (!isArmMapSymbol(def) && !isThumbMapSymbol(def) &&
           !isDataMapSymbol(def))
         continue;
-      if (auto *sec = dyn_cast_or_null<InputSection>(def->section))
+      if (auto *sec = dyn_cast_or_null<InputSection>(def->getSection()))
         if (sec->flags & SHF_EXECINSTR)
           sectionMap[sec].push_back(def);
     }
@@ -444,7 +444,7 @@ static void implementPatch(ScanResult sr, InputSection *isec,
       // Thunk from the patch to the target.
       uint64_t dstSymAddr = (sr.rel->expr == R_PLT_PC)
                                 ? sr.rel->sym->getPltVA(isec->getCompartment())
-                                : sr.rel->sym->getVA();
+                                : sr.rel->sym->getVA(isec->getCompartment());
       destIsARM = (dstSymAddr & 1) == 0;
     }
     psec = make<Patch657417Section>(isec, sr.off, sr.instr, destIsARM);

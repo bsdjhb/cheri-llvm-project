@@ -423,7 +423,8 @@ private:
   // This is similar to the handling for ARMThunk.
   bool mayUseShortThunk = true;
   int64_t computeOffset() const {
-    return destination.getVA() - (getThunkTargetSym()->getVA() + 4);
+    Compartment &c = *getThunkTargetSym()->containingCompartment();
+    return destination.getVA(c) - (getThunkTargetSym()->getVA(c) + 4);
   }
 };
 
@@ -508,7 +509,7 @@ void Thunk::setOffset(uint64_t newOffset) {
 // AArch64 Thunk base class.
 static uint64_t getAArch64ThunkDestVA(const Compartment &c, const Symbol &s,
                                       int64_t a) {
-  uint64_t v = s.isInPlt(c) ? s.getPltVA(c) : s.getVA(a);
+  uint64_t v = s.isInPlt(c) ? s.getPltVA(c) : s.getVA(c, a);
   return v;
 }
 
@@ -517,7 +518,7 @@ bool AArch64Thunk::getMayUseShortThunk() {
     return false;
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getAArch64ThunkDestVA(c, destination, addend);
-  uint64_t p = getThunkTargetSym()->getVA();
+  uint64_t p = getThunkTargetSym()->getVA(c);
   mayUseShortThunk = llvm::isInt<28>(s - p);
   return mayUseShortThunk;
 }
@@ -529,7 +530,7 @@ void AArch64Thunk::writeTo(uint8_t *buf) {
   }
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getAArch64ThunkDestVA(c, destination, addend);
-  uint64_t p = getThunkTargetSym()->getVA();
+  uint64_t p = getThunkTargetSym()->getVA(c);
   write32(buf, 0x14000000); // b S
   target->relocateNoSym(buf, R_AARCH64_CALL26, s - p);
 }
@@ -569,7 +570,7 @@ void AArch64ADRPThunk::writeLong(uint8_t *buf) {
   };
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getAArch64ThunkDestVA(c, destination, addend);
-  uint64_t p = getThunkTargetSym()->getVA();
+  uint64_t p = getThunkTargetSym()->getVA(c);
   memcpy(buf, data, sizeof(data));
   target->relocateNoSym(buf, R_AARCH64_ADR_PREL_PG_HI21,
                         getAArch64Page(s) - getAArch64Page(p));
@@ -584,7 +585,7 @@ void AArch64ADRPThunk::addSymbols(ThunkSection &isec) {
 
 // ARM Target Thunks
 static uint64_t getARMThunkDestVA(const Compartment &c, const Symbol &s) {
-  uint64_t v = s.isInPlt(c) ? s.getPltVA(c) : s.getVA();
+  uint64_t v = s.isInPlt(c) ? s.getPltVA(c) : s.getVA(c);
   return SignExtend64<32>(v);
 }
 
@@ -599,7 +600,7 @@ bool ARMThunk::getMayUseShortThunk() {
     mayUseShortThunk = false;
     return false;
   }
-  uint64_t p = getThunkTargetSym()->getVA();
+  uint64_t p = getThunkTargetSym()->getVA(c);
   int64_t offset = s - p - 8;
   mayUseShortThunk = llvm::isInt<26>(offset);
   return mayUseShortThunk;
@@ -613,7 +614,7 @@ void ARMThunk::writeTo(uint8_t *buf) {
 
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getARMThunkDestVA(c, destination);
-  uint64_t p = getThunkTargetSym()->getVA();
+  uint64_t p = getThunkTargetSym()->getVA(c);
   int64_t offset = s - p - 8;
   write32(buf, 0xea000000); // b S
   target->relocateNoSym(buf, R_ARM_JUMP24, offset);
@@ -644,7 +645,7 @@ bool ThumbThunk::getMayUseShortThunk() {
     mayUseShortThunk = false;
     return false;
   }
-  uint64_t p = getThunkTargetSym()->getVA() & ~1;
+  uint64_t p = getThunkTargetSym()->getVA(c) & ~1;
   int64_t offset = s - p - 4;
   mayUseShortThunk = llvm::isInt<25>(offset);
   return mayUseShortThunk;
@@ -658,7 +659,7 @@ void ThumbThunk::writeTo(uint8_t *buf) {
 
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getARMThunkDestVA(c, destination);
-  uint64_t p = getThunkTargetSym()->getVA();
+  uint64_t p = getThunkTargetSym()->getVA(c);
   int64_t offset = s - p - 4;
   write16(buf + 0, 0xf000); // b.w S
   write16(buf + 2, 0xb000);
@@ -716,7 +717,7 @@ void ARMV7PILongThunk::writeLong(uint8_t *buf) {
   write32(buf + 12, 0xe12fff1c);  //     bx   ip
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getARMThunkDestVA(c, destination);
-  uint64_t p = getThunkTargetSym()->getVA();
+  uint64_t p = getThunkTargetSym()->getVA(c);
   int64_t offset = s - p - 16;
   target->relocateNoSym(buf, R_ARM_MOVW_PREL_NC, offset);
   target->relocateNoSym(buf + 4, R_ARM_MOVT_PREL, offset);
@@ -737,7 +738,7 @@ void ThumbV7PILongThunk::writeLong(uint8_t *buf) {
   write16(buf + 10, 0x4760);  //     bx   ip
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getARMThunkDestVA(c, destination);
-  uint64_t p = getThunkTargetSym()->getVA() & ~0x1;
+  uint64_t p = getThunkTargetSym()->getVA(c) & ~0x1;
   int64_t offset = s - p - 12;
   target->relocateNoSym(buf, R_ARM_THM_MOVW_PREL_NC, offset);
   target->relocateNoSym(buf + 4, R_ARM_THM_MOVT_PREL, offset);
@@ -814,7 +815,7 @@ void ThumbV6MPILongThunk::writeLong(uint8_t *buf) {
   write32(buf + 12, 0x00000000);  // L2: .word S - (P + (L1 - P) + 4)
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getARMThunkDestVA(c, destination);
-  uint64_t p = getThunkTargetSym()->getVA() & ~0x1;
+  uint64_t p = getThunkTargetSym()->getVA(c) & ~0x1;
   target->relocateNoSym(buf + 12, R_ARM_REL32, s - p - 12);
 }
 
@@ -905,7 +906,7 @@ void ARMV4PILongBXThunk::writeLong(uint8_t *buf) {
   write32(buf + 12, 0x00000000); // L2: .word S - (P + (L1 - P) + 8)
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getARMThunkDestVA(c, destination);
-  uint64_t p = getThunkTargetSym()->getVA() & ~0x1;
+  uint64_t p = getThunkTargetSym()->getVA(c) & ~0x1;
   target->relocateNoSym(buf + 12, R_ARM_REL32, s - p - 12);
 }
 
@@ -923,7 +924,7 @@ void ARMV4PILongThunk::writeLong(uint8_t *buf) {
   write32(buf + 8, 0x00000000); // L2: .word S - (P + (L1 - P) + 8)
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getARMThunkDestVA(c, destination);
-  uint64_t p = getThunkTargetSym()->getVA() & ~0x1;
+  uint64_t p = getThunkTargetSym()->getVA(c) & ~0x1;
   target->relocateNoSym(buf + 8, R_ARM_REL32, s - p - 12);
 }
 
@@ -943,7 +944,7 @@ void ThumbV4PILongBXThunk::writeLong(uint8_t *buf) {
   write32(buf + 12, 0x00000000); // L2: .word S - (P + (L1 - P) + 8)
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getARMThunkDestVA(c, destination);
-  uint64_t p = getThunkTargetSym()->getVA() & ~0x1;
+  uint64_t p = getThunkTargetSym()->getVA(c) & ~0x1;
   target->relocateNoSym(buf + 12, R_ARM_REL32, s - p - 16);
 }
 
@@ -965,7 +966,7 @@ void ThumbV4PILongThunk::writeLong(uint8_t *buf) {
   write32(buf + 16, 0x00000000); // L2: .word S - (P + (L1 - P) + 8)
   Compartment &c = *getThunkTargetSym()->containingCompartment();
   uint64_t s = getARMThunkDestVA(c, destination);
-  uint64_t p = getThunkTargetSym()->getVA() & ~0x1;
+  uint64_t p = getThunkTargetSym()->getVA(c) & ~0x1;
   target->relocateNoSym(buf + 16, R_ARM_REL32, s - p - 16);
 }
 
@@ -980,8 +981,9 @@ void ThumbV4PILongThunk::addSymbols(ThunkSection &isec) {
 
 // Use the long jump which covers a range up to 8MiB.
 void AVRThunk::writeTo(uint8_t *buf) {
+  Compartment &c = *getThunkTargetSym()->containingCompartment();
   write32(buf, 0x940c); // jmp func
-  target->relocateNoSym(buf, R_AVR_CALL, destination.getVA());
+  target->relocateNoSym(buf, R_AVR_CALL, destination.getVA(c));
 }
 
 void AVRThunk::addSymbols(ThunkSection &isec) {
@@ -991,7 +993,8 @@ void AVRThunk::addSymbols(ThunkSection &isec) {
 
 // Write MIPS LA25 thunk code to call PIC function from the non-PIC one.
 void MipsThunk::writeTo(uint8_t *buf) {
-  uint64_t s = destination.getVA();
+  Compartment &c = *getThunkTargetSym()->containingCompartment();
+  uint64_t s = destination.getVA(c);
   write32(buf, 0x3c190000); // lui   $25, %hi(func)
   write32(buf + 4, 0x08000000 | (s >> 2)); // j     func
   write32(buf + 8, 0x27390000); // addiu $25, $25, %lo(func)
@@ -1007,13 +1010,14 @@ void MipsThunk::addSymbols(ThunkSection &isec) {
 
 InputSection *MipsThunk::getTargetInputSection() const {
   auto &dr = cast<Defined>(destination);
-  return dyn_cast<InputSection>(dr.section);
+  return dyn_cast<InputSection>(dr.getSection());
 }
 
 // Write microMIPS R2-R5 LA25 thunk code
 // to call PIC function from the non-PIC one.
 void MicroMipsThunk::writeTo(uint8_t *buf) {
-  uint64_t s = destination.getVA();
+  Compartment &c = *getThunkTargetSym()->containingCompartment();
+  uint64_t s = destination.getVA(c);
   write16(buf, 0x41b9);       // lui   $25, %hi(func)
   write16(buf + 4, 0xd400);   // j     func
   write16(buf + 8, 0x3339);   // addiu $25, $25, %lo(func)
@@ -1032,14 +1036,15 @@ void MicroMipsThunk::addSymbols(ThunkSection &isec) {
 
 InputSection *MicroMipsThunk::getTargetInputSection() const {
   auto &dr = cast<Defined>(destination);
-  return dyn_cast<InputSection>(dr.section);
+  return dyn_cast<InputSection>(dr.getSection());
 }
 
 // Write microMIPS R6 LA25 thunk code
 // to call PIC function from the non-PIC one.
 void MicroMipsR6Thunk::writeTo(uint8_t *buf) {
-  uint64_t s = destination.getVA();
-  uint64_t p = getThunkTargetSym()->getVA();
+  Compartment &c = *getThunkTargetSym()->containingCompartment();
+  uint64_t s = destination.getVA(c);
+  uint64_t p = getThunkTargetSym()->getVA(c);
   write16(buf, 0x1320);       // lui   $25, %hi(func)
   write16(buf + 4, 0x3339);   // addiu $25, $25, %lo(func)
   write16(buf + 8, 0x9400);   // bc    func
@@ -1057,7 +1062,7 @@ void MicroMipsR6Thunk::addSymbols(ThunkSection &isec) {
 
 InputSection *MicroMipsR6Thunk::getTargetInputSection() const {
   auto &dr = cast<Defined>(destination);
-  return dyn_cast<InputSection>(dr.section);
+  return dyn_cast<InputSection>(dr.getSection());
 }
 
 void elf::writePPC32PltCallStub(uint8_t *buf, uint64_t gotPltVA,
@@ -1129,9 +1134,10 @@ void PPC32LongThunk::addSymbols(ThunkSection &isec) {
 void PPC32LongThunk::writeTo(uint8_t *buf) {
   auto ha = [](uint32_t v) -> uint16_t { return (v + 0x8000) >> 16; };
   auto lo = [](uint32_t v) -> uint16_t { return v; };
-  uint32_t d = destination.getVA(addend);
+  Compartment &c = *getThunkTargetSym()->containingCompartment();
+  uint32_t d = destination.getVA(c, addend);
   if (config->isPic) {
-    uint32_t off = d - (getThunkTargetSym()->getVA() + 8);
+    uint32_t off = d - (getThunkTargetSym()->getVA(c) + 8);
     write32(buf + 0, 0x7c0802a6);            // mflr r12,0
     write32(buf + 4, 0x429f0005);            // bcl r20,r31,.+4
     write32(buf + 8, 0x7d8802a6);            // mtctr r12
@@ -1179,6 +1185,7 @@ bool PPC64PltCallStub::isCompatibleWith(const InputSection &isec,
 }
 
 void PPC64R2SaveStub::writeTo(uint8_t *buf) {
+  Compartment &c = *getThunkTargetSym()->containingCompartment();
   const int64_t offset = computeOffset();
   write32(buf + 0, 0xf8410018); // std  r2,24(r1)
   // The branch offset needs to fit in 26 bits.
@@ -1186,7 +1193,7 @@ void PPC64R2SaveStub::writeTo(uint8_t *buf) {
     write32(buf + 4, 0x48000000 | (offset & 0x03fffffc)); // b    <offset>
   } else if (isInt<34>(offset)) {
     int nextInstOffset;
-    uint64_t tocOffset = destination.getVA() - getPPC64TocBase();
+    uint64_t tocOffset = destination.getVA(c) - getPPC64TocBase();
     if (tocOffset >> 16 > 0) {
       const uint64_t addi = ADDI_R12_TO_R12_NO_DISP | (tocOffset & 0xffff);
       const uint64_t addis =
@@ -1223,8 +1230,8 @@ bool PPC64R2SaveStub::isCompatibleWith(const InputSection &isec,
 
 void PPC64R12SetupStub::writeTo(uint8_t *buf) {
   Compartment &c = *getThunkTargetSym()->containingCompartment();
-  int64_t offset = (gotPlt ? destination.getGotPltVA(c) : destination.getVA()) -
-                   getThunkTargetSym()->getVA();
+  int64_t offset = (gotPlt ? destination.getGotPltVA(c) : destination.getVA(c)) -
+                   getThunkTargetSym()->getVA(c);
   if (!isInt<34>(offset))
     reportRangeError(buf, offset, 34, destination, "R12 setup stub offset");
 
@@ -1304,7 +1311,7 @@ static Thunk *addThunkAArch64(RelType type, Symbol &s, int64_t a) {
 // TODO: use B for short Thumb->Arm thunks instead of LDR (this doesn't work for
 //       Arm->Thumb, as in Arm state no BX PC trick; it doesn't switch state).
 static Thunk *addThunkArmv4(RelType reloc, Symbol &s, int64_t a) {
-  bool thumb_target = s.getVA(a) & 1;
+  bool thumb_target = s.getVA(*defaultCompart, a) & 1;
 
   switch (reloc) {
   case R_ARM_PC24:

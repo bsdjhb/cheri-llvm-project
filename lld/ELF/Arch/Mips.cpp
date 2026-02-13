@@ -122,7 +122,7 @@ RelExpr MIPS<ELFT>::getRelExpr(RelType type, const Symbol &s,
     // If the target symbol is not preemptible and is not microMIPS,
     // it might be possible to replace jalr/jr instruction by bal/b.
     // It depends on the target symbol's offset.
-    if (!s.isPreemptible && !(s.getVA() & 0x1))
+    if (!s.isPreemptible && !(s.getVA(*defaultCompart) & 0x1))
       return R_PC;
     return R_NONE;
   case R_MICROMIPS_JALR:
@@ -863,11 +863,11 @@ template <class ELFT> bool elf::isMipsPIC(const Defined *sym) {
   if (sym->stOther & STO_MIPS_PIC)
     return true;
 
-  if (!sym->section)
+  if (!sym->getSection())
     return false;
 
   ObjFile<ELFT> *file =
-      cast<InputSectionBase>(sym->section)->template getFile<ELFT>();
+      cast<InputSectionBase>(sym->getSection())->template getFile<ELFT>();
   if (!file)
     return false;
 

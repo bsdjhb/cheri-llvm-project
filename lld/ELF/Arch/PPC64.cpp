@@ -276,7 +276,7 @@ static void writeSequence(MutableArrayRef<uint32_t> buf, const char *prefix,
       ".text");
   ctx.inputSections.push_back(sec);
   for (Defined *sym : defined) {
-    sym->section = sec;
+    sym->setSection(sec);
     sym->value -= 4 * first;
   }
 }
@@ -369,12 +369,12 @@ static bool tryRelaxPPC64TocIndirection(const Relocation &rel,
 
   // If the symbol is not the .toc section, this isn't a toc-indirection.
   Defined *defSym = dyn_cast<Defined>(rel.sym);
-  if (!defSym || !defSym->isSection() || defSym->section->name != ".toc")
+  if (!defSym || !defSym->isSection() || defSym->getSection()->name != ".toc")
     return false;
 
   Defined *d;
   int64_t addend;
-  auto *tocISB = cast<InputSectionBase>(defSym->section);
+  auto *tocISB = cast<InputSectionBase>(defSym->getSection());
   std::tie(d, addend) =
       config->isLE ? getRelaTocSymAndAddend<ELF64LE>(tocISB, rel.addend)
                    : getRelaTocSymAndAddend<ELF64BE>(tocISB, rel.addend);
@@ -388,7 +388,7 @@ static bool tryRelaxPPC64TocIndirection(const Relocation &rel,
   assert(!d->isGnuIFunc());
 
   // Two instructions can materialize a 32-bit signed offset from the toc base.
-  uint64_t tocRelative = d->getVA(addend) - getPPC64TocBase();
+  uint64_t tocRelative = d->getVA(*defaultCompart, addend) - getPPC64TocBase();
   if (!isInt<32>(tocRelative))
     return false;
 
@@ -1405,7 +1405,7 @@ bool PPC64::needsThunk(RelExpr expr, RelType type, const InputFile *file,
   // a range-extending thunk.
   // See the comment in getRelocTargetVA() about R_PPC64_CALL.
   return !inBranchRange(type, branchAddr,
-                        s.getVA(a) +
+                        s.getVA(c, a) +
                             getPPC64GlobalEntryToLocalEntryOffset(s.stOther));
 }
 

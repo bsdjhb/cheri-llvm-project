@@ -110,7 +110,7 @@ void elf::reportRangeError(uint8_t *loc, const Relocation &rel, const Twine &v,
     if (!rel.sym->isSection())
       hint = "; references '" + lld::toString(*rel.sym) + '\'';
     else if (auto *d = dyn_cast<Defined>(rel.sym))
-      hint = ("; references section '" + d->section->name + "'").str();
+      hint = ("; references section '" + d->getSection()->name + "'").str();
   }
   if (!errPlace.srcLoc.empty())
     hint += "\n>>> referenced by " + errPlace.srcLoc;
@@ -192,7 +192,7 @@ static bool isAbsolute(const Symbol &sym) {
   if (sym.isUndefWeak())
     return true;
   if (const auto *dr = dyn_cast<Defined>(&sym))
-    return dr->section == nullptr; // Absolute symbol.
+    return dr->getSection() == nullptr; // Absolute symbol.
   return false;
 }
 
@@ -1157,7 +1157,7 @@ void RelocationScanner::processAux(RelExpr expr, RelType type, uint64_t offset,
 
   if (config->isCheriAbi && sym.isDefined() && (sec->flags & SHF_EXECINSTR) &&
       oneof<R_PC, R_AARCH64_PAGE_PC>(expr)) {
-    OutputSection *osec = sym.getOutputSection();
+    OutputSection *osec = sym.getOutputSection(sec->getCompartment());
     if (osec == nullptr)
       llvm_unreachable(
           "PCC-accessed symbol defined in unsupported section type");
@@ -1614,7 +1614,7 @@ template <class ELFT, class RelTy> void RelocationScanner::scanOne(RelTy *&i) {
     // Record the TOC entry (.toc + addend) as not relaxable. See the comment in
     // InputSectionBase::relocateAlloc().
     if (type == R_PPC64_TOC16_LO && sym.isSection() && isa<Defined>(sym) &&
-        cast<Defined>(sym).section->name == ".toc")
+        cast<Defined>(sym).getSection()->name == ".toc")
       ppc64noTocRelax.insert({&sym, addend});
 
     if ((type == R_PPC64_TLSGD && expr == R_TLSDESC_CALL) ||
@@ -1838,7 +1838,7 @@ static bool handleNonPreemptibleIfunc(Compartment &c, Symbol &sym,
   if (flags & HAS_DIRECT_RELOC) {
     // Change the value to the IPLT and redirect all references to it.
     auto &d = cast<Defined>(sym);
-    d.section = c.iplt.get();
+    d.setSection(c.iplt.get());
     d.value = d.getPltIdx(c) * target->ipltEntrySize;
     if (config->isCheriAbi)
       d.setSize(target->ipltEntrySize);
@@ -2385,6 +2385,7 @@ static bool isThunkSectionCompatible(InputSection *source,
 
 std::pair<Thunk *, bool> ThunkCreator::getThunk(InputSection *isec,
                                                 Relocation &rel, uint64_t src) {
+  Compartment &c = isec->getCompartment();
   std::vector<Thunk *> *thunkVec = nullptr;
   // Arm and Thumb have a PC Bias of 8 and 4 respectively, this is cancelled
   // out in the relocation addend. We compensate for the PC bias so that
@@ -2398,19 +2399,22 @@ std::pair<Thunk *, bool> ThunkCreator::getThunk(InputSection *isec,
   // sections. There may be multiple relocations sharing the same (section,
   // offset + addend) pair. We may revert the relocation back to its original
   // non-Thunk target, so we cannot fold offset + addend.
-  if (auto *d = dyn_cast<Defined>(rel.sym))
-    if (!d->isInPlt(isec->getCompartment()) && d->section)
-      thunkVec = &thunkedSymbolsBySectionAndAddend[{{d->section, d->value},
+  if (auto *d = dyn_cast<Defined>(rel.sym)) {
+    if (!d->isInPlt(c) && d->getSection(c))
+      thunkVec = &thunkedSymbolsBySectionAndAddend[{{d->getSection(c),
+                                                     d->value},
                                                     keyAddend}];
+  }
+
   if (!thunkVec)
     thunkVec = &thunkedSymbols[{rel.sym, keyAddend}];
 
   // Check existing Thunks for Sym to see if they can be reused
   for (Thunk *t : *thunkVec)
-    if (isThunkSectionCompatible(isec, t->getThunkTargetSym()->section) &&
+    if (isThunkSectionCompatible(isec, t->getThunkTargetSym()->getSection(c)) &&
         t->isCompatibleWith(*isec, rel) &&
         target->inBranchRange(rel.type, src,
-                              t->getThunkTargetSym()->getVA(-pcBias)))
+                              t->getThunkTargetSym()->getVA(c, -pcBias)))
       return std::make_pair(t, false);
 
   // No existing compatible Thunk in range, create a new one
@@ -2426,7 +2430,7 @@ std::pair<Thunk *, bool> ThunkCreator::getThunk(InputSection *isec,
 bool ThunkCreator::normalizeExistingThunk(Compartment &c, Relocation &rel,
                                           uint64_t src) {
   if (Thunk *t = thunks.lookup(rel.sym)) {
-    if (target->inBranchRange(rel.type, src, rel.sym->getVA(rel.addend)))
+    if (target->inBranchRange(rel.type, src, rel.sym->getVA(c, rel.addend)))
       return true;
     rel.sym = &t->destination;
     rel.addend = t->addend;

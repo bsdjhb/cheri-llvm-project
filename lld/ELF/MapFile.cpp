@@ -58,8 +58,9 @@ static std::vector<Defined *> getSymbols() {
   for (ELFFileBase *file : ctx.objectFiles)
     for (Symbol *b : file->getSymbols())
       if (auto *dr = dyn_cast<Defined>(b))
-        if (!dr->isSection() && dr->section && dr->section->isLive() &&
-            (dr->file == file || dr->needsCopyAny || dr->section->bss))
+        if (!dr->isSection() && dr->getSection() &&
+            dr->getSection()->isLive() &&
+            (dr->file == file || dr->needsCopyAny || dr->getSection()->bss))
           v.push_back(dr);
   return v;
 }
@@ -68,7 +69,7 @@ static std::vector<Defined *> getSymbols() {
 static SymbolMapTy getSectionSyms(ArrayRef<Defined *> syms) {
   SymbolMapTy ret;
   for (Defined *dr : syms)
-    ret[dr->section].emplace_back(dr, dr->getVA());
+    ret[dr->getSection()].emplace_back(dr, dr->getVA(*defaultCompart));
 
   // Sort symbols by address. We want to print out symbols in the
   // order in the output file rather than the order they appeared
@@ -94,8 +95,8 @@ getSymbolStrings(ArrayRef<Defined *> syms) {
   auto strs = std::make_unique<std::string[]>(syms.size());
   parallelFor(0, syms.size(), [&](size_t i) {
     raw_string_ostream os(strs[i]);
-    OutputSection *osec = syms[i]->getOutputSection();
-    uint64_t vma = syms[i]->getVA();
+    OutputSection *osec = syms[i]->getOutputSection(*defaultCompart);
+    uint64_t vma = syms[i]->getVA(*defaultCompart);
     uint64_t lma = osec ? osec->getLMA() + vma - osec->getVA(0) : 0;
     writeHeader(os, vma, lma, syms[i]->getSize(), 1);
     os << indent16 << toString(*syms[i]);
@@ -229,7 +230,7 @@ static void writeCref(raw_fd_ostream &os) {
       if (isa<SharedSymbol>(sym))
         map[sym].insert(file);
       if (auto *d = dyn_cast<Defined>(sym))
-        if (!d->isLocal() && (!d->section || d->section->isLive()))
+        if (!d->isLocal() && (!d->getSection() || d->getSection()->isLive()))
           map[d].insert(file);
     }
   }

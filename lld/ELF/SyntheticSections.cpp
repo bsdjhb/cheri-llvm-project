@@ -433,8 +433,10 @@ Defined *EhFrameSection::isFdeLive(EhSectionPiece &fde, ArrayRef<RelTy> rels) {
 
   // FDEs for garbage-collected or merged-by-ICF sections, or sections in
   // another partition, are dead.
+  Compartment &c = sec->getCompartment();
   if (auto *d = dyn_cast<Defined>(&b))
-    if (!d->folded && d->section && d->section->partition == partition)
+    if (!d->folded && d->getSection(c) &&
+        d->getSection(c)->partition == partition)
       return d;
   return nullptr;
 }
@@ -488,7 +490,8 @@ void EhFrameSection::iterateFDEWithLSDAAux(
 
     // The CIE has a LSDA argument. Call fn with d's section.
     if (Defined *d = isFdeLive<ELFT>(fde, rels))
-      if (auto *s = dyn_cast_or_null<InputSection>(d->section))
+      if (auto *s = dyn_cast_or_null<InputSection>(d->getSection(
+                                                       sec.getCompartment())))
         fn(*s);
   }
 }
@@ -796,11 +799,12 @@ MipsGotSection::MipsGotSection()
 void MipsGotSection::addEntry(InputFile &file, Symbol &sym, int64_t addend,
                               RelExpr expr) {
   FileGot &g = getGot(file);
+  const Compartment &c = getCompartment();
   if (expr == R_MIPS_GOT_LOCAL_PAGE) {
-    if (const OutputSection *os = sym.getOutputSection())
+    if (const OutputSection *os = sym.getOutputSection(c))
       g.pagesMap.insert({os, {}});
     else
-      g.local16.insert({{nullptr, getMipsPageAddr(sym.getVA(addend))}, 0});
+      g.local16.insert({{nullptr, getMipsPageAddr(sym.getVA(c, addend))}, 0});
   } else if (sym.isTls())
     g.tls.insert({&sym, 0});
   else if (sym.isPreemptible && expr == R_ABS)
@@ -855,14 +859,15 @@ MipsGotSection::FileGot &MipsGotSection::getGot(InputFile &f) {
 uint64_t MipsGotSection::getPageEntryOffset(const InputFile *f,
                                             const Symbol &sym,
                                             int64_t addend) const {
+  const Compartment &c = getCompartment();
   const FileGot &g = gots[f->mipsGotIndex];
   uint64_t index = 0;
-  if (const OutputSection *outSec = sym.getOutputSection()) {
+  if (const OutputSection *outSec = sym.getOutputSection(c)) {
     uint64_t secAddr = getMipsPageAddr(outSec->addr);
-    uint64_t symAddr = getMipsPageAddr(sym.getVA(addend));
+    uint64_t symAddr = getMipsPageAddr(sym.getVA(c, addend));
     index = g.pagesMap.lookup(outSec).firstIndex + (symAddr - secAddr) / 0xffff;
   } else {
-    index = g.local16.lookup({nullptr, getMipsPageAddr(sym.getVA(addend))});
+    index = g.local16.lookup({nullptr, getMipsPageAddr(sym.getVA(c, addend))});
   }
   return index * config->wordsize;
 }
@@ -1150,7 +1155,7 @@ uint64_t MipsGotSection::getGp(const InputFile *f) const {
   // returns "common" _gp value. For secondary GOTs calculate
   // individual _gp values.
   if (!f || f->mipsGotIndex == uint32_t(-1) || f->mipsGotIndex == 0)
-    return ElfSym::mipsGp->getVA(0);
+    return ElfSym::mipsGp->getVA(getCompartment(), 0);
   return getVA() + gots[f->mipsGotIndex].startIndex * config->wordsize + 0x7ff0;
 }
 
@@ -1169,12 +1174,13 @@ void MipsGotSection::writeTo(uint8_t *buf) {
   // we've been doing this for years, it is probably a safe bet to
   // keep doing this for now. We really need to revisit this to see
   // if we had to do this.
+  const Compartment &c = getCompartment();
   writeUint(buf + config->wordsize, (uint64_t)1 << (config->wordsize * 8 - 1));
   for (const FileGot &g : gots) {
     auto write = [&](size_t i, const Symbol *s, int64_t a) {
       uint64_t va = a;
       if (s)
-        va = s->getVA(a);
+        va = s->getVA(c, a);
       writeUint(buf + i * config->wordsize, va);
     };
     // Write 'page address' entries to the local part of the GOT.
@@ -1289,8 +1295,9 @@ size_t IgotPltSection::getSize() const {
 }
 
 void IgotPltSection::writeTo(uint8_t *buf) {
+  Compartment &c = getCompartment();
   for (const Symbol *b : entries) {
-    target->writeIgotPlt(buf, *b);
+    target->writeIgotPlt(c, buf, *b);
     buf += target->gotEntrySize;
   }
 }
@@ -1613,10 +1620,10 @@ DynamicSection<ELFT>::computeContents() {
 
     if (Symbol *b = symtab.find(config->init))
       if (b->isDefined())
-        addInt(DT_INIT, b->getVA());
+        addInt(DT_INIT, b->getVA(*defaultCompart));
     if (Symbol *b = symtab.find(config->fini))
       if (b->isDefined())
-        addInt(DT_FINI, b->getVA());
+        addInt(DT_FINI, b->getVA(*defaultCompart));
   }
 
   if (part.verSym && part.verSym->isNeeded())
@@ -2428,7 +2435,7 @@ size_t SymbolTableBaseSection::getSymbolIndex(Symbol *sym) {
     size_t i = 0;
     for (const SymbolTableEntry &e : symbols) {
       if (e.sym->type == STT_SECTION)
-        sectionIndexMap[e.sym->getOutputSection()] = ++i;
+        sectionIndexMap[e.sym->getOutputSection(*defaultCompart)] = ++i;
       else
         symbolIndexMap[e.sym] = ++i;
     }
@@ -2437,7 +2444,7 @@ size_t SymbolTableBaseSection::getSymbolIndex(Symbol *sym) {
   // Section symbols are mapped based on their output sections
   // to maintain their semantics.
   if (sym->type == STT_SECTION)
-    return sectionIndexMap.lookup(sym->getOutputSection());
+    return sectionIndexMap.lookup(sym->getOutputSection(*defaultCompart));
   return symbolIndexMap.lookup(sym);
 }
 
@@ -2450,7 +2457,7 @@ SymbolTableSection<ELFT>::SymbolTableSection(StringTableSection &strTabSec)
 static BssSection *getCommonSec(Symbol *sym) {
   if (config->relocatable)
     if (auto *d = dyn_cast<Defined>(sym))
-      return dyn_cast_or_null<BssSection>(d->section);
+      return dyn_cast_or_null<BssSection>(d->getSection());
   return nullptr;
 }
 
@@ -2458,7 +2465,7 @@ static uint32_t getSymSectionIndex(Symbol *sym) {
   assert(!(sym->needsCopyAny && sym->isObject()));
   if (!isa<Defined>(sym) || sym->needsCopyAny)
     return SHN_UNDEF;
-  if (const OutputSection *os = sym->getOutputSection())
+  if (const OutputSection *os = sym->getOutputSection(*defaultCompart))
     return os->sectionIndex >= SHN_LORESERVE ? (uint32_t)SHN_XINDEX
                                              : os->sectionIndex;
   return SHN_ABS;
@@ -2490,7 +2497,7 @@ template <class ELFT> void SymbolTableSection<ELFT>::writeTo(uint8_t *buf) {
       const uint32_t shndx = getSymSectionIndex(sym);
       if (isDefinedHere) {
         eSym->st_shndx = shndx;
-        eSym->st_value = sym->getVA();
+        eSym->st_value = sym->getVA(*defaultCompart);
         // Copy symbol size if it is a defined symbol. st_size is not
         // significant for undefined symbols, so whether copying it or not is up
         // to us if that's the case. We'll leave it as zero because by not
@@ -2554,7 +2561,7 @@ void SymtabShndxSection::writeTo(uint8_t *buf) {
   buf += 4; // Ignore .symtab[0] entry.
   for (const SymbolTableEntry &entry : in.symTab->getSymbols()) {
     if (!getCommonSec(entry.sym) && getSymSectionIndex(entry.sym) == SHN_XINDEX)
-      write32(buf, entry.sym->getOutputSection()->sectionIndex);
+      write32(buf, entry.sym->getOutputSection(*defaultCompart)->sectionIndex);
     buf += 4;
   }
 }
@@ -3953,13 +3960,14 @@ void PPC64LongBranchTargetSection::writeTo(uint8_t *buf) {
   if (config->isPic)
     return;
 
+  const Compartment &c = getCompartment();
   for (auto entry : entries) {
     const Symbol *sym = entry.first;
     int64_t addend = entry.second;
-    assert(sym->getVA());
+    assert(sym->getVA(c));
     // Need calls to branch to the local entry-point since a long-branch
     // must be a local-call.
-    write64(buf, sym->getVA(addend) +
+    write64(buf, sym->getVA(c, addend) +
                      getPPC64GlobalEntryToLocalEntryOffset(sym->stOther));
     buf += 8;
   }

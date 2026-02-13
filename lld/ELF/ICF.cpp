@@ -270,19 +270,22 @@ bool ICF<ELFT>::constantEq(const InputSection *secA, ArrayRef<RelTy> ra,
     if (da->isPreemptible || db->isPreemptible)
       return false;
 
+    auto *daSec = da->getSection(secA->getCompartment());
+    auto *dbSec = db->getSection(secB->getCompartment());
+
     // Relocations referring to absolute symbols are constant-equal if their
     // values are equal.
-    if (!da->section && !db->section && da->value + addA == db->value + addB)
+    if (!daSec && !dbSec && da->value + addA == db->value + addB)
       continue;
-    if (!da->section || !db->section)
+    if (!daSec || !dbSec)
       return false;
 
-    if (da->section->kind() != db->section->kind())
+    if (daSec->kind() != dbSec->kind())
       return false;
 
     // Relocations referring to InputSections are constant-equal if their
     // section offsets are equal.
-    if (isa<InputSection>(da->section)) {
+    if (isa<InputSection>(daSec)) {
       if (da->value + addA == db->value + addB)
         continue;
       return false;
@@ -290,10 +293,10 @@ bool ICF<ELFT>::constantEq(const InputSection *secA, ArrayRef<RelTy> ra,
 
     // Relocations referring to MergeInputSections are constant-equal if their
     // offsets in the output section are equal.
-    auto *x = dyn_cast<MergeInputSection>(da->section);
+    auto *x = dyn_cast<MergeInputSection>(daSec);
     if (!x)
       return false;
-    auto *y = cast<MergeInputSection>(db->section);
+    auto *y = cast<MergeInputSection>(dbSec);
     if (x->getParent() != y->getParent())
       return false;
 
@@ -349,12 +352,12 @@ bool ICF<ELFT>::variableEq(const InputSection *secA, ArrayRef<RelTy> ra,
     // We already dealt with absolute and non-InputSection symbols in
     // constantEq, and for InputSections we have already checked everything
     // except the equivalence class.
-    if (!da->section)
+    if (!da->getSection())
       continue;
-    auto *x = dyn_cast<InputSection>(da->section);
+    auto *x = dyn_cast<InputSection>(da->getSection(secA->getCompartment()));
     if (!x)
       continue;
-    auto *y = cast<InputSection>(db->section);
+    auto *y = cast<InputSection>(db->getSection(secB->getCompartment()));
 
     // Sections that are in the special equivalence class 0, can never be the
     // same in terms of the equivalence class.
@@ -444,7 +447,7 @@ static void combineRelocHashes(unsigned cnt, InputSection *isec,
   for (RelTy rel : rels) {
     Symbol &s = isec->template getFile<ELFT>()->getRelocTargetSym(rel);
     if (auto *d = dyn_cast<Defined>(&s))
-      if (auto *relSec = dyn_cast_or_null<InputSection>(d->section))
+      if (auto *relSec = dyn_cast_or_null<InputSection>(d->getSection()))
         hash += relSec->eqClass[cnt % 2];
   }
   // Set MSB to 1 to avoid collisions with unique IDs.
@@ -554,9 +557,9 @@ template <class ELFT> void ICF<ELFT>::run() {
   // Change Defined symbol's section field to the canonical one.
   auto fold = [](Symbol *sym) {
     if (auto *d = dyn_cast<Defined>(sym))
-      if (auto *sec = dyn_cast_or_null<InputSection>(d->section))
-        if (sec->repl != d->section) {
-          d->section = sec->repl;
+      if (auto *sec = dyn_cast_or_null<InputSection>(d->getSection()))
+        if (sec->repl != d->getSection()) {
+          d->setSection(sec->repl);
           d->folded = true;
         }
   };

@@ -38,7 +38,8 @@ public:
   void writeGotHeader(uint8_t *buf) const override;
   void writeGotPlt(Compartment &c, uint8_t *buf,
                    const Symbol &s) const override;
-  void writeIgotPlt(uint8_t *buf, const Symbol &s) const override;
+  void writeIgotPlt(Compartment &c, uint8_t *buf,
+                    const Symbol &s) const override;
   void writePltHeader(Compartment &c, uint8_t *buf) const override;
   void writePlt(Compartment &c, uint8_t *buf, const Symbol &sym,
                 uint64_t pltEntryAddr) const override;
@@ -247,12 +248,12 @@ void RISCV::writeGotPlt(Compartment &c, uint8_t *buf, const Symbol &s) const {
     write32le(buf, c.plt->getVA());
 }
 
-void RISCV::writeIgotPlt(uint8_t *buf, const Symbol &s) const {
+void RISCV::writeIgotPlt(Compartment &c, uint8_t *buf, const Symbol &s) const {
   if (config->writeAddends) {
     if (config->is64)
-      write64le(buf, s.getVA());
+      write64le(buf, s.getVA(c));
     else
-      write32le(buf, s.getVA());
+      write32le(buf, s.getVA(c));
   }
 }
 
@@ -407,7 +408,8 @@ RelExpr RISCV::getRelExpr(const RelType type, const Symbol &s,
   }
 }
 
-void RISCV::relocate(uint8_t *loc, const Relocation &rel, uint64_t val) const {
+void RISCV::relocate(uint8_t *loc, const Relocation &rel,
+                     uint64_t val) const {
   const unsigned bits = config->wordsize * 8;
 
   switch (rel.type) {
@@ -549,7 +551,8 @@ void RISCV::relocate(uint8_t *loc, const Relocation &rel, uint64_t val) const {
   case INTERNAL_R_RISCV_GPREL_I:
   case INTERNAL_R_RISCV_GPREL_S: {
     Defined *gp = ElfSym::riscvGlobalPointer;
-    int64_t displace = SignExtend64(val - gp->getVA(), bits);
+    // XXX: Hardcoding defaultCompart here is a hack
+    int64_t displace = SignExtend64(val - gp->getVA(*defaultCompart), bits);
     checkInt(loc, displace, 12, rel);
     uint32_t insn = (read32le(loc) & ~(31 << 15)) | (X_GP << 15);
     if (rel.type == INTERNAL_R_RISCV_GPREL_I)
@@ -689,7 +692,7 @@ static void initSymbolAnchors() {
       auto *d = dyn_cast<Defined>(sym);
       if (!d || (d->file != file && !d->scriptDefined))
         continue;
-      if (auto *sec = dyn_cast_or_null<InputSection>(d->section))
+      if (auto *sec = dyn_cast_or_null<InputSection>(d->getSection()))
         if (sec->flags & SHF_EXECINSTR && sec->relaxAux) {
           // If sec is discarded, relaxAux will be nullptr.
           sec->relaxAux->anchors.push_back({d->value, d, false});
@@ -715,12 +718,13 @@ static void initSymbolAnchors() {
 // Relax R_RISCV_CALL/R_RISCV_CALL_PLT auipc+jalr to c.j, c.jal, or jal.
 static void relaxCall(const InputSection &sec, size_t i, uint64_t loc,
                       Relocation &r, uint32_t &remove) {
+  const Compartment &c = sec.getCompartment();
   const bool rvc = config->eflags & EF_RISCV_RVC;
   const Symbol &sym = *r.sym;
   const uint64_t insnPair = read64le(sec.content().data() + r.offset);
   const uint32_t rd = extractBits(insnPair, 32 + 11, 32 + 7);
   const uint64_t dest =
-      (r.expr == R_PLT_PC ? sym.getPltVA(sec.getCompartment()) : sym.getVA()) +
+      (r.expr == R_PLT_PC ? sym.getPltVA(sec.getCompartment()) : sym.getVA(c)) +
       r.addend;
   const int64_t displace = dest - loc;
 
@@ -743,7 +747,8 @@ static void relaxCall(const InputSection &sec, size_t i, uint64_t loc,
 // Relax local-exec TLS when hi20 is zero.
 static void relaxTlsLe(const InputSection &sec, size_t i, uint64_t loc,
                        Relocation &r, uint32_t &remove) {
-  uint64_t val = r.sym->getVA(r.addend);
+  const Compartment &c = sec.getCompartment();
+  uint64_t val = r.sym->getVA(c, r.addend);
   if (hi20(val) != 0)
     return;
   uint32_t insn = read32le(sec.content().data() + r.offset);
@@ -775,7 +780,8 @@ static void relaxHi20Lo12(const InputSection &sec, size_t i, uint64_t loc,
   if (!gp)
     return;
 
-  if (!isInt<12>(r.sym->getVA(r.addend) - gp->getVA()))
+  const Compartment &c = sec.getCompartment();
+  if (!isInt<12>(r.sym->getVA(c, r.addend) - gp->getVA(c)))
     return;
 
   switch (r.type) {

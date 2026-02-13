@@ -738,8 +738,8 @@ static bool shouldKeepInSymtab(const Defined &sym) {
   // sections. After merging the .ARM.exidx sections, some of these symbols
   // may become dangling. The easiest way to avoid the issue is not to add
   // them to the symbol table from the beginning.
-  if (config->emachine == EM_ARM && sym.section &&
-      sym.section->type == SHT_ARM_EXIDX)
+  if (config->emachine == EM_ARM && sym.getSection() &&
+      sym.getSection()->type == SHT_ARM_EXIDX)
     return false;
 
   if (config->discard == DiscardPolicy::None)
@@ -754,7 +754,7 @@ static bool shouldKeepInSymtab(const Defined &sym) {
   //   the assembler keeping the .L symbol.
   if (sym.getName().starts_with(".L") &&
       (config->discard == DiscardPolicy::Locals ||
-       (sym.section && (sym.section->flags & SHF_MERGE))))
+       (sym.getSection() && (sym.getSection()->flags & SHF_MERGE))))
     return false;
   return true;
 }
@@ -762,7 +762,7 @@ static bool shouldKeepInSymtab(const Defined &sym) {
 static bool includeInSymtab(const Symbol &b) {
   if (auto *d = dyn_cast<Defined>(&b)) {
     // Always include absolute symbols.
-    SectionBase *sec = d->section;
+    SectionBase *sec = d->getSection();
     if (!sec)
       return true;
 
@@ -1140,13 +1140,13 @@ template <class ELFT> void Writer<ELFT>::setReservedSymbolSections() {
     if (!target->gotBaseSymInGotPlt)
       sec = in.mipsGot ? cast<InputSection>(in.mipsGot.get())
                        : cast<InputSection>(defaultCompart->got.get());
-    ElfSym::globalOffsetTable->section = sec;
+    ElfSym::globalOffsetTable->setSection(sec);
   }
 
   // .rela_iplt_{start,end} mark the start and the end of in.relaIplt.
   if (ElfSym::relaIpltStart && in.relaIplt->isNeeded()) {
-    ElfSym::relaIpltStart->section = in.relaIplt.get();
-    ElfSym::relaIpltEnd->section = in.relaIplt.get();
+    ElfSym::relaIpltStart->setSection(in.relaIplt.get());
+    ElfSym::relaIpltEnd->setSection(in.relaIplt.get());
     ElfSym::relaIpltEnd->value = in.relaIplt->getSize();
   }
 
@@ -1166,9 +1166,9 @@ template <class ELFT> void Writer<ELFT>::setReservedSymbolSections() {
   if (lastRO) {
     // _etext is the first location after the last read-only loadable segment.
     if (ElfSym::etext1)
-      ElfSym::etext1->section = lastRO->lastSec;
+      ElfSym::etext1->setSection(lastRO->lastSec);
     if (ElfSym::etext2)
-      ElfSym::etext2->section = lastRO->lastSec;
+      ElfSym::etext2->setSection(lastRO->lastSec);
   }
 
   if (last) {
@@ -1182,22 +1182,22 @@ template <class ELFT> void Writer<ELFT>::setReservedSymbolSections() {
     }
 
     if (ElfSym::edata1)
-      ElfSym::edata1->section = edata;
+      ElfSym::edata1->setSection(edata);
     if (ElfSym::edata2)
-      ElfSym::edata2->section = edata;
+      ElfSym::edata2->setSection(edata);
 
     // _end is the first location after the uninitialized data region.
     if (ElfSym::end1)
-      ElfSym::end1->section = last->lastSec;
+      ElfSym::end1->setSection(last->lastSec);
     if (ElfSym::end2)
-      ElfSym::end2->section = last->lastSec;
+      ElfSym::end2->setSection(last->lastSec);
   }
 
   if (ElfSym::bss) {
     // On RISC-V, set __bss_start to the start of .sbss if present.
     OutputSection *sbss =
         config->emachine == EM_RISCV ? findSection(".sbss") : nullptr;
-    ElfSym::bss->section = sbss ? sbss : findSection(".bss");
+    ElfSym::bss->setSection(sbss ? sbss : findSection(".bss"));
   }
 
   // Setup MIPS _gp_disp/__gnu_local_gp symbols which should
@@ -1207,7 +1207,7 @@ template <class ELFT> void Writer<ELFT>::setReservedSymbolSections() {
     // and use this address to calculate default _gp value.
     for (OutputSection *os : outputSections) {
       if (os->flags & SHF_MIPS_GPREL) {
-        ElfSym::mipsGp->section = os;
+        ElfSym::mipsGp->setSection(os);
         ElfSym::mipsGp->value = 0x7ff0;
         break;
       }
@@ -1379,7 +1379,7 @@ static DenseMap<const InputSectionBase *, int> buildSectionOrder() {
     maybeWarnUnorderableSymbol(&sym);
 
     if (auto *d = dyn_cast<Defined>(&sym)) {
-      if (auto *sec = dyn_cast_or_null<InputSectionBase>(d->section)) {
+      if (auto *sec = dyn_cast_or_null<InputSectionBase>(d->getSection())) {
         int &priority = sectionOrder[cast<InputSectionBase>(sec)];
         priority = std::min(priority, ent.priority);
       }
@@ -1871,7 +1871,7 @@ static void fixSymbolsAfterShrinking() {
       if (!def)
         return;
 
-      const SectionBase *sec = def->section;
+      const SectionBase *sec = def->getSection();
       if (!sec)
         return;
 
@@ -2012,21 +2012,21 @@ static void markCheriPccSections() {
   // defined in one, for which we need to have CHERI PCC bounds.
   for (Symbol *sym : symtab.getSymbols()) {
     Defined *d = dyn_cast<Defined>(sym);
-    if (!d || !d->section)
+    if (!d || !d->getSection())
       continue;
-    if ((d->section->flags & (SHF_ALLOC | SHF_EXECINSTR)) ==
+    if ((d->getSection()->flags & (SHF_ALLOC | SHF_EXECINSTR)) ==
         (SHF_ALLOC | SHF_EXECINSTR))
-      d->section->getCompartment().pccPadding->markNeeded();
+      d->getSection()->getCompartment().pccPadding->markNeeded();
   }
 
   for (ELFFileBase *file : ctx.objectFiles) {
     for (Symbol *sym : file->getLocalSymbols()) {
       Defined *d = dyn_cast<Defined>(sym);
-      if (!d || !d->section)
+      if (!d || !d->getSection())
         continue;
-      if ((d->section->flags & (SHF_ALLOC | SHF_EXECINSTR)) ==
+      if ((d->getSection()->flags & (SHF_ALLOC | SHF_EXECINSTR)) ==
           (SHF_ALLOC | SHF_EXECINSTR))
-        d->section->getCompartment().pccPadding->markNeeded();
+        d->getSection()->getCompartment().pccPadding->markNeeded();
     }
   }
 
@@ -2498,7 +2498,7 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
     auto *reg = dyn_cast<Defined>(s);
     if (!reg)
       continue;
-    if (const OutputSection *outSec = reg->getOutputSection())
+    if (const OutputSection *outSec = reg->getOutputSection(*defaultCompart))
       // XXXAR: Out::ElfHeader is a special output section and will never be
       // marked as live. We still need keep symbols pointing there since they
       // will then point to the first output section
@@ -2510,7 +2510,7 @@ template <class ELFT> void Writer<ELFT>::finalizeSections() {
           !script->isAether(outSec)) {
         // errs() << "Symbol " << toString(*Reg) << " points to garbage collected output section " << OutSec->Name << "\n";
         reg->type = STT_NOTYPE;
-        reg->section = nullptr;
+        reg->setSection(nullptr);
         reg->value = 0;
         // Avoid crashes when calling getSize()/setSize().
         reg->isSectionStartSymbol = false;
@@ -3235,7 +3235,7 @@ template <class ELFT> void Writer<ELFT>::checkSections() {
 static uint64_t getEntryAddr() {
   // Case 1, 2 or 3
   if (Symbol *b = symtab.find(config->entry))
-    return b->getVA();
+    return b->getVA(*defaultCompart);
 
   // Case 4
   uint64_t addr;

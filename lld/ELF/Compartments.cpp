@@ -282,7 +282,7 @@ compartmentForSection(const InputSectionBase *s,
   std::vector<Symbol *> implicit_symbols;
   for (Symbol *b : f->getSymbols()) {
     if (Defined *d = dyn_cast<Defined>(b)) {
-      if (d->section != s)
+      if (d->getSection() != s)
         continue;
 
       if (b->getName().empty())
@@ -345,7 +345,7 @@ static Symbol *firstExportedSymbol(const InputSectionBase *s) {
   InputFile *f = s->file;
   for (Symbol *b : f->getSymbols()) {
     if (Defined *d = dyn_cast<Defined>(b)) {
-      if (d->section != s)
+      if (d->getSection() != s)
         continue;
 
       if (!b->includeInDynsym())
@@ -389,7 +389,8 @@ static void scanRelocations(InputSectionBase *sec, ArrayRef<RelTy> rels,
     if (d == nullptr)
       continue;
 
-    InputSectionBase *tsec = static_cast<InputSectionBase *>(d->section);
+    InputSectionBase *tsec =
+	static_cast<InputSectionBase *>(d->getSection(sec->getCompartment()));
     if (tsec == nullptr)
       continue;
 

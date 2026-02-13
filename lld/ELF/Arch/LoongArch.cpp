@@ -27,7 +27,8 @@ public:
   int64_t getImplicitAddend(const uint8_t *buf, RelType type) const override;
   void writeGotPlt(Compartment &c, uint8_t *buf,
                    const Symbol &s) const override;
-  void writeIgotPlt(uint8_t *buf, const Symbol &s) const override;
+  void writeIgotPlt(Compartment &c, uint8_t *buf,
+                    const Symbol &s) const override;
   void writePltHeader(Compartment &c, uint8_t *buf) const override;
   void writePlt(Compartment &c, uint8_t *buf, const Symbol &sym,
                 uint64_t pltEntryAddr) const override;
@@ -347,12 +348,13 @@ void LoongArch::writeGotPlt(Compartment &c, uint8_t *buf,
     write32le(buf, c.plt->getVA());
 }
 
-void LoongArch::writeIgotPlt(uint8_t *buf, const Symbol &s) const {
+void LoongArch::writeIgotPlt(Compartment &c, uint8_t *buf,
+                             const Symbol &s) const {
   if (config->writeAddends) {
     if (config->is64)
-      write64le(buf, s.getVA());
+      write64le(buf, s.getVA(c));
     else
-      write32le(buf, s.getVA());
+      write32le(buf, s.getVA(c));
   }
 }
 

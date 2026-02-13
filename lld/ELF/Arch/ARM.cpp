@@ -36,7 +36,8 @@ public:
   int64_t getImplicitAddend(const uint8_t *buf, RelType type) const override;
   void writeGotPlt(Compartment &c, uint8_t *buf,
                    const Symbol &s) const override;
-  void writeIgotPlt(uint8_t *buf, const Symbol &s) const override;
+  void writeIgotPlt(Compartment &c, uint8_t *buf,
+                    const Symbol &s) const override;
   void writePltHeader(Compartment &c, uint8_t *buf) const override;
   void writePlt(Compartment &c, uint8_t *buf, const Symbol &sym,
                 uint64_t pltEntryAddr) const override;
@@ -208,9 +209,9 @@ void ARM::writeGotPlt(Compartment &c, uint8_t *buf, const Symbol &) const {
   write32(buf, c.plt->getVA());
 }
 
-void ARM::writeIgotPlt(uint8_t *buf, const Symbol &s) const {
+void ARM::writeIgotPlt(Compartment &c, uint8_t *buf, const Symbol &s) const {
   // An ARM entry is the address of the ifunc resolver function.
-  write32(buf, s.getVA());
+  write32(buf, s.getVA(c));
 }
 
 // Long form PLT Header that does not have any restrictions on the displacement
@@ -326,25 +327,25 @@ bool ARM::needsThunk(RelExpr expr, RelType type, const InputFile *file,
   case R_ARM_JUMP24:
     // Source is ARM, all PLT entries are ARM so no interworking required.
     // Otherwise we need to interwork if STT_FUNC Symbol has bit 0 set (Thumb).
-    if (s.isFunc() && expr == R_PC && (s.getVA() & 1))
+    if (s.isFunc() && expr == R_PC && (s.getVA(c) & 1))
       return true;
     [[fallthrough]];
   case R_ARM_CALL: {
-    uint64_t dst = (expr == R_PLT_PC) ? s.getPltVA(c) : s.getVA();
+    uint64_t dst = (expr == R_PLT_PC) ? s.getPltVA(c) : s.getVA(c);
     return !inBranchRange(type, branchAddr, dst + a) ||
-        (!config->armHasBlx && (s.getVA() & 1));
+        (!config->armHasBlx && (s.getVA(c) & 1));
   }
   case R_ARM_THM_JUMP19:
   case R_ARM_THM_JUMP24:
     // Source is Thumb, all PLT entries are ARM so interworking is required.
     // Otherwise we need to interwork if STT_FUNC Symbol has bit 0 clear (ARM).
-    if (expr == R_PLT_PC || (s.isFunc() && (s.getVA() & 1) == 0))
+    if (expr == R_PLT_PC || (s.isFunc() && (s.getVA(c) & 1) == 0))
       return true;
     [[fallthrough]];
   case R_ARM_THM_CALL: {
-    uint64_t dst = (expr == R_PLT_PC) ? s.getPltVA(c) : s.getVA();
+    uint64_t dst = (expr == R_PLT_PC) ? s.getPltVA(c) : s.getVA(c);
     return !inBranchRange(type, branchAddr, dst + a) ||
-        (!config->armHasBlx && (s.getVA() & 1) == 0);;
+        (!config->armHasBlx && (s.getVA(c) & 1) == 0);;
   }
   }
   return false;
@@ -425,7 +426,7 @@ static void stateChangeWarning(uint8_t *loc, RelType relt, const Symbol &s) {
     // Section symbols must be defined and in a section. Users cannot change
     // the type. Use the section name as getName() returns an empty string.
     warn(place.loc + "branch and link relocation: " + toString(relt) +
-         " to STT_SECTION symbol " + cast<Defined>(s).section->name +
+         " to STT_SECTION symbol " + cast<Defined>(s).getSection()->name +
          " ; interworking not performed" + hint);
   } else {
     // Warn with hint on how to alter the symbol type.
@@ -984,7 +985,7 @@ void elf::addArmInputSectionMappingSymbols() {
       if (!isArmMapSymbol(def) && !isDataMapSymbol(def) &&
           !isThumbMapSymbol(def))
         continue;
-      if (auto *sec = cast_if_present<InputSection>(def->section))
+      if (auto *sec = cast_if_present<InputSection>(def->getSection()))
         if (sec->flags & SHF_EXECINSTR)
           sectionMap[sec].push_back(def);
     }
@@ -999,7 +1000,7 @@ void elf::addArmInputSectionMappingSymbols() {
 void elf::addArmSyntheticSectionMappingSymbol(Defined *sym) {
   if (!isArmMapSymbol(sym) && !isDataMapSymbol(sym) && !isThumbMapSymbol(sym))
     return;
-  if (auto *sec = cast_if_present<InputSection>(sym->section))
+  if (auto *sec = cast_if_present<InputSection>(sym->getSection()))
     if (sec->flags & SHF_EXECINSTR)
       sectionMap[sec].push_back(sym);
 }
@@ -1164,7 +1165,7 @@ static std::string checkCmseSymAttributes(Symbol *acleSeSym, Symbol *sym) {
       return (Twine(toString(s->file)) + ": cmse " + type + " symbol '" +
               s->getName() + "' is not a Thumb function definition")
           .str();
-    if (!d->section)
+    if (!d->getSection())
       return (Twine(toString(s->file)) + ": cmse " + type + " symbol '" +
               s->getName() + "' cannot be an absolute symbol")
           .str();
@@ -1304,6 +1305,7 @@ void ArmCmseSGSection::addSGVeneer(Symbol *acleSeSym, Symbol *sym) {
 }
 
 void ArmCmseSGSection::writeTo(uint8_t *buf) {
+  const Compartment &c = getCompartment();
   for (ArmCmseSGVeneer *s : sgVeneers) {
     uint8_t *p = buf + s->offset;
     write16(p + 0, 0xe97f); // SG
@@ -1311,7 +1313,7 @@ void ArmCmseSGSection::writeTo(uint8_t *buf) {
     write16(p + 4, 0xf000); // B.W S
     write16(p + 6, 0xb000);
     target->relocateNoSym(p + 4, R_ARM_THM_JUMP24,
-                          s->acleSeSym->getVA() -
+                          s->acleSeSym->getVA(c) -
                               (getVA() + s->offset + s->size));
   }
 }
@@ -1377,13 +1379,13 @@ template <typename ELFT> void elf::writeARMCmseImportLib() {
 
   std::sort(symtab.cmseSymMap.begin(), symtab.cmseSymMap.end(),
             [](const auto &a, const auto &b) -> bool {
-              return a.second.sym->getVA() < b.second.sym->getVA();
+              return a.second.sym->getVA(*defaultCompart) < b.second.sym->getVA(*defaultCompart);
             });
   // Copy the secure gateway entry symbols to the import library symbol table.
   for (auto &p : symtab.cmseSymMap) {
     Defined *d = cast<Defined>(p.second.sym);
     impSymTab->addSymbol(makeDefined(nullptr, d->getName(), d->computeBinding(),
-                                     /*stOther=*/0, STT_FUNC, d->getVA(),
+                                     /*stOther=*/0, STT_FUNC, d->getVA(*defaultCompart),
                                      d->getSize(), nullptr));
   }
 

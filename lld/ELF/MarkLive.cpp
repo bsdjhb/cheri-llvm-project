@@ -95,7 +95,8 @@ void MarkLive<ELFT>::resolveReloc(InputSectionBase &sec, RelTy &rel,
   sym.used = true;
 
   if (auto *d = dyn_cast<Defined>(&sym)) {
-    auto *relSec = dyn_cast_or_null<InputSectionBase>(d->section);
+    auto *relSec = dyn_cast_or_null<InputSectionBase>(
+        d->getSection(sec.getCompartment()));
     if (!relSec)
       return;
 
@@ -201,7 +202,7 @@ void MarkLive<ELFT>::enqueue(InputSectionBase *sec, uint64_t offset) {
 
 template <class ELFT> void MarkLive<ELFT>::markSymbol(Symbol *sym) {
   if (auto *d = dyn_cast_or_null<Defined>(sym))
-    if (auto *isec = dyn_cast_or_null<InputSectionBase>(d->section))
+    if (auto *isec = dyn_cast_or_null<InputSectionBase>(d->getSection()))
       enqueue(isec, d->value);
 }
 
@@ -335,8 +336,8 @@ template <class ELFT> void MarkLive<ELFT>::moveToMain() {
   for (ELFFileBase *file : ctx.objectFiles)
     for (Symbol *s : file->getSymbols())
       if (auto *d = dyn_cast<Defined>(s))
-        if ((d->type == STT_GNU_IFUNC || d->type == STT_TLS) && d->section &&
-            d->section->isLive())
+        if ((d->type == STT_GNU_IFUNC || d->type == STT_TLS) &&
+            d->getSection() && d->getSection()->isLive())
           markSymbol(s);
 
   for (InputSectionBase *sec : ctx.inputSections) {
