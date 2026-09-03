@@ -165,7 +165,6 @@ document soon.
    missingkeyfunction
    error_handling_script
    Compartments
-   Partitions
    ReleaseNotes
    ELF/linker_script
    ELF/start-stop-gc
