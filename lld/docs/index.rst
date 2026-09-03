@@ -164,6 +164,7 @@ document soon.
    windows_support
    missingkeyfunction
    error_handling_script
+   Compartments
    Partitions
    ReleaseNotes
    ELF/linker_script
